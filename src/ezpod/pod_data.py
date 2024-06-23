@@ -132,7 +132,3 @@ class PodData(BaseModel):
                 raise e
         return datas
 
-
-# poddata[0].shhurl().sshcmd
-print([s.sshaddr for s in PodData.get_all()])
-# self.pods[0].data.shhurl().sshcmd
