@@ -6,18 +6,24 @@ import time
 from patchwork.transfers import rsync
 from fabric import Connection
 from .pod_data import PodData
-from .create_pods import create_pod
+from .create_pods import create_pod, PodCreationConfig
 import os
 import libtmux as tm
 
 
 class RunFolder(BaseModel):
     local_path: str = "."
-    remote_name: str = "."
+    # remote_n
+    # ame: Optional[str] = None
 
     @classmethod
     def cwd(cls):
         return cls(remote_name=os.path.basename(os.getcwd()), local_path=".")
+
+    @property
+    def remote_name(self):
+        path = self.local_path if self.local_path != "." else os.getcwd()
+        return os.path.basename(path)
 
     @property
     def local(self):
@@ -131,9 +137,10 @@ class Pod:
         self.tmi.run(f"{s} -t '{cmd}'")
 
     def setup(self):
-        self.sync_folder()
         if "setup.py" in os.listdir(self.folder):
-            self.run()
+            self.run(f"{self.project.pyname} -m pip install -e .")
+        elif "requirements.txt" in os.listdir(self.folder):
+            self.run(f"{self.project.pyname} -m pip install -r requirements.txt")
 
     def remove(self):
         r = subprocess.run(
@@ -158,12 +165,18 @@ class Pod:
 
 
 class Pods:
-    def __init__(self, project: RunProject, pods: list[Pod]):
+    def __init__(
+        self,
+        project: RunProject,
+        pods: list[Pod],
+        new_pods_config: Optional[PodCreationConfig] = None,
+    ):
         self.project = project
         self.pending = []
         self.pods = pods
         self.by_id = {pod.data.id: pod for pod in pods}
         self.by_name = {pod.data.name: pod for pod in pods}
+        self.new_pods_config = new_pods_config or PodCreationConfig()
         assert len(self.by_id) == len(self.pods)
         assert len(self.by_name) == len(self.pods)
 
@@ -253,17 +266,21 @@ class Pods:
         )
 
     @classmethod
-    def All(cls, project: Optional[RunProject] = None) -> "Pods":
+    def All(
+        cls,
+        project: Optional[RunProject] = None,
+        new_pods_config: Optional[PodCreationConfig] = None,
+    ) -> "Pods":
         if project is None:
             project = RunProject(folder=RunFolder.cwd())
 
         poddatas = PodData.get_all()
         pods = [Pod(project=project, data=pd) for pd in poddatas]
-        return cls(project=project, pods=pods)
+        return cls(project=project, pods=pods, new_pods_config=new_pods_config)
 
     def make_new_pods(self, n):
         allpods = self.All()
-        current_max = max(
+        current_largest_n = max(
             map(
                 lambda x: int(x.replace("pod", "")),
                 allpods.by_name.keys(),
@@ -271,7 +288,7 @@ class Pods:
             default=-1,
         )
         for i in range(n):
-            r = create_pod(f"pod{current_max + i + 1}")
+            r = self.new_pods_config.create_pod(f"pod{current_largest_n + i + 1}")
             pod_id = str(r.stdout).split('pod "')[1].split('" created')[0]
             self.pending.append(pod_id)
 
