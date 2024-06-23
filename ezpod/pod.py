@@ -4,11 +4,11 @@ from pydantic import BaseModel
 from typing import Optional
 import time
 from patchwork.transfers import rsync
+from fabric import Connection
 from .pod_data import PodData
 from .create_pods import create_pod
 import os
 import libtmux as tm
-from fabric import Connection
 
 
 class RunFolder(BaseModel):
@@ -18,6 +18,13 @@ class RunFolder(BaseModel):
     @classmethod
     def cwd(cls):
         return cls(remote_name=os.path.basename(os.getcwd()), local_path=".")
+
+    @property
+    def local(self):
+        return Path(self.local_path)
+
+    @property
+    def remote(self): ...
 
 
 serv = tm.Server()
@@ -78,10 +85,11 @@ class Pod:
     def folder(self):
         return Path(self.project.folder.local_path)
 
-    def sync_code(self):
+    def sync_folder(self, folder: Optional[RunFolder] = None):
+        folder = folder or self.project.folder
         exclude = []
         if ".gitignore" in os.listdir(self.folder):
-            exclude = open(self.folder / ".gitignore").read().split("\n")
+            exclude = open(folder.local / ".gitignore").read().split("\n")
         exclude += [".git"]
 
         connection = Connection(self.data.sshaddr.addr, connect_kwargs={"timeout": 10})
@@ -95,6 +103,26 @@ class Pod:
         )
         connection.close()
 
+    def sync_folder_async(self, folder: Optional[RunFolder] = None):
+        from ezpod.sync import asyncrsync
+
+        folder = folder or self.project.folder
+        exclude = []
+        if ".gitignore" in os.listdir(self.folder):
+            exclude = open(folder.local / ".gitignore").read().split("\n")
+        exclude += [".git"]
+
+        connection = Connection(self.data.sshaddr.addr, connect_kwargs={"timeout": 10})
+        promise = asyncrsync(
+            c=connection,
+            source=self.project.folder.local_path,
+            target=f"/root/",
+            exclude=exclude,
+            rsync_opts="-L",
+            ssh_opts="-o StrictHostKeyChecking=no",
+        )
+        return promise, connection
+
     def run(self, cmd, in_folder=True):
         if in_folder:
             cmd = f"cd {self.project.folder.remote_name}; {cmd}"
@@ -103,7 +131,7 @@ class Pod:
         self.tmi.run(f"{s} -t '{cmd}'")
 
     def setup(self):
-        self.sync_code()
+        self.sync_folder()
         if "setup.py" in os.listdir(self.folder):
             self.run()
 
@@ -115,7 +143,7 @@ class Pod:
             print(r.stderr)
             raise Exception("Error removing pod.")
         if r.stdout:
-            print(r.stdout)
+            print(f"{self.data.name}: {r.stdout}")
         self.tmi.pane.send_keys("exit")
 
     def update(self, data: PodData):
@@ -145,9 +173,28 @@ class Pods:
             pod.run(cmd, in_folder)
 
     def sync(self):  # todo do this async
+        self.sync_async()
+        return
         self.wait_pending()
         for pod in self.pods:
-            pod.sync_code()
+            pod.sync_folder()
+
+    def sync_async(self):
+        self.wait_pending()
+        print("syncing...")
+        promises = []
+        connections = []
+        for pod in self.pods:
+            promise, connection = pod.sync_folder_async()
+            promises.append(promise)
+            connections.append(connection)
+        print("all syncs started, waiting")
+        for promise in promises:
+            promise.join()
+        print("all syncs completed, closing connections")
+        for connection in connections:
+            connection.close()
+        print("done")
 
     def setup(self):
         self.sync()

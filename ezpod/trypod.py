@@ -1,4 +1,7 @@
 # %%
+import sys
+
+sys.path.append("/home/g/code/ml/ezpod")
 from ezpod.pod import Pods, RunProject, RunFolder
 
 pods = Pods.All(
@@ -8,19 +11,4 @@ pods = Pods.All(
         )
     )
 )
-# pods = Pods.All()
-# pods = Pods.All()
-# pods = Pods.All()
-
-# %%
-# pods.run("ls")
-# %%
-# pods.update()
-# pods.sync()
-# pods.run("ls")
-
-pods.make_new_pods(2)
-pods.sync()
-
-pods.run("ls")
 pods.purge()
