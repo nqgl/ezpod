@@ -1,6 +1,9 @@
-from ezpod import Pods, RunProject, RunFolder, PodCreationConfig
+from ezpod import PodCreationConfig
 import argparse
 import click
+
+from ezpod.pods import Pods
+from ezpod.runproject import RunFolder, RunProject
 
 
 @click.command()

@@ -1,5 +1,7 @@
 import ezpod
-from ezpod import Pods, RunProject, RunFolder, PodCreationConfig
+from ezpod import PodCreationConfig
+from ezpod.pods import Pods
+from ezpod.runproject import RunFolder, RunProject
 
 
 # folder to sync:

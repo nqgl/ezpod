@@ -1,87 +1,16 @@
 import subprocess
 from pathlib import Path
-from pydantic import BaseModel
 from typing import Optional
-import time
 from patchwork.transfers import rsync
 from fabric import Connection
 
+from ezpod.runproject import RunFolder, RunProject
+from ezpod.tmux import TMInstance
+
 # from ezpod.tmux import TMInstance
 from .pod_data import PodData
-from .create_pods import create_pod, PodCreationConfig
+from .create_pods import create_pod
 import os
-import libtmux as tm
-
-
-class RunFolder(BaseModel):
-    local_path: str = "."
-    # remote_n
-    # ame: Optional[str] = None
-
-    @classmethod
-    def cwd(cls):
-        return cls(remote_name=os.path.basename(os.getcwd()), local_path=".")
-
-    @property
-    def remote_name(self):
-        path = self.local_path if self.local_path != "." else os.getcwd()
-        return os.path.basename(path)
-
-    @property
-    def local(self):
-        return Path(self.local_path)
-
-    @property
-    def remote(self): ...
-
-
-serv = tm.Server()
-
-
-class RunProject(BaseModel):
-    folder: RunFolder
-    pyname: str = "/bin/python3"
-    seshname: str = "srun"
-
-    @property
-    def sesh(self):
-        try:
-            return serv.sessions.get(lambda session: session.name == "srun")
-        except:
-            return serv.new_session(session_name="srun")
-
-
-class TMInstance:
-    def __init__(self, project: RunProject, data: PodData):
-        self.proj = project
-        self.data = data
-        self.cmd_n = 0
-
-    @property
-    def win_name(self):
-        return self.data.name
-
-    @property
-    def pane(self):
-        return self.window.active_pane
-
-    @property
-    def window(self):
-        try:
-            return self.proj.sesh.windows.get(
-                lambda window: window.name == self.win_name
-            )
-        except:
-            return self.proj.sesh.new_window(window_name=self.win_name)
-
-    def run(self, cmd):
-        signal = f"{self.data.name}sig{self.cmd_n}"
-        cmd = f"{cmd}; tmux wait-for -S {signal}"
-        self.cmd_n += 1
-        self.pane.send_keys(cmd)
-        self.window
-        join = lambda: subprocess.run(f"tmux wait-for {signal}", shell=True, check=True)
-        return join
 
 
 class Pod:
@@ -132,19 +61,50 @@ class Pod:
         )
         return promise, connection
 
-    def run(self, cmd, in_folder=True):
+    def command_extras(self, cmd, in_folder=True):
         cmd = f"source /etc/rp_environment; {cmd}"
         if in_folder:
             cmd = f"cd {self.project.folder.remote_name}; {cmd}"
+        return cmd
+
+    def remote_command(self, cmd, in_folder=True) -> str:
         assert "'" not in cmd, "Support for single quotes not implemented yet."
-        s = self.data.sshaddr.sshcmd
-        return self.tmi.run(f"{s} -t '{cmd}'")
+        return self.as_bash_ssh_command(self.command_extras(cmd, in_folder))
+
+    def as_bash_ssh_command(self, cmd):
+        return f"{self.data.sshaddr.sshcmd} -t '{cmd}'"
+
+    def run(self, cmd, in_folder=True):
+        return self.tmi.run(self.remote_command(cmd, in_folder))
+
+    async def async_ssh_exec(self, cmd):
+        import asyncssh
+
+        opts = asyncssh.SSHClientConnectionOptions(username="root")
+        async with asyncssh.connect(
+            self.data.sshaddr.ip, self.data.sshaddr.port, options=opts
+        ) as conn:
+            result = await conn.run(cmd, check=True)
+            print(self.data.name, result.stdout, end="")
+
+    async def run_async(self, cmd, in_folder=True):
+        # cmd = self.remote_command(cmd, in_folder)
+        await self.async_ssh_exec(self.command_extras(cmd, in_folder))
 
     def setup(self):
         if "setup.py" in os.listdir(self.folder):
             return self.run(f"{self.project.pyname} -m pip install -e .")
         elif "requirements.txt" in os.listdir(self.folder):
             return self.run(f"{self.project.pyname} -m pip install -r requirements.txt")
+        raise Exception("No setup.py or requirements.txt found.")
+
+    def setup_async(self):
+        if "setup.py" in os.listdir(self.folder):
+            return self.run_async(f"{self.project.pyname} -m pip install -e .")
+        elif "requirements.txt" in os.listdir(self.folder):
+            return self.run_async(
+                f"{self.project.pyname} -m pip install -r requirements.txt"
+            )
         raise Exception("No setup.py or requirements.txt found.")
 
     def remove(self):
@@ -167,157 +127,3 @@ class Pod:
             raise Exception("Pod name changed.")
         self.data = data
         self.tmi.data = data
-
-
-class Pods:
-    def __init__(
-        self,
-        project: RunProject,
-        pods: list[Pod],
-        new_pods_config: Optional[PodCreationConfig] = None,
-    ):
-        self.project = project
-        self.pending = []
-        self.pods = pods
-        self.by_id = {pod.data.id: pod for pod in pods}
-        self.by_name = {pod.data.name: pod for pod in pods}
-        self.new_pods_config = new_pods_config or PodCreationConfig()
-        assert len(self.by_id) == len(self.pods)
-        assert len(self.by_name) == len(self.pods)
-
-    def run(self, cmd, in_folder=True):
-        self.wait_pending()
-        print(f"running {cmd} on all pods")
-        joins = [pod.run(cmd, in_folder) for pod in self.pods]
-        print("waiting for commands to finish...")
-        for join in joins:
-            join()
-        print("joining done.")
-
-    def runpy(self, cmd, in_folder=True):
-        self.run(f"{self.project.pyname} {cmd}", in_folder)
-
-    def sync(self):  # todo do this async
-        self.sync_async()
-        return
-        self.wait_pending()
-        for pod in self.pods:
-            pod.sync_folder()
-
-    def sync_async(self):
-        self.wait_pending()
-        print("syncing...")
-        promises = []
-        connections = []
-        for pod in self.pods:
-            promise, connection = pod.sync_folder_async()
-            promises.append(promise)
-            connections.append(connection)
-        print("all syncs started, waiting")
-        for promise in promises:
-            promise.join()
-        print("all syncs completed, closing connections")
-        for connection in connections:
-            connection.close()
-        print("done")
-
-    def setup(self):
-        self.sync()
-        # self.wait_pending()
-        print(f"setting up all pods")
-        joins = [pod.setup() for pod in self.pods]
-        print("waiting for setups to finish...")
-        for join in joins:
-            join()
-        print("setups done.")
-
-    def add_pod(self, pod):
-        if pod.data.id in self.by_id:
-            raise Exception(f"Pod with id {pod.data.id} already exists.")
-        if pod.data.name in self.by_name:
-            raise Exception(f"Pod with name {pod.data.name} already exists.")
-        self.pods.append(pod)
-        self.by_id[pod.data.id] = pod
-        self.by_name[pod.data.name] = pod
-        if pod.data.id in self.pending:
-            self.pending.remove(pod.data.id)
-            print(
-                f"Pod {pod.data.name} initialized. {len(self.pending)} still pending."
-            )
-
-    def wait_pending(self):
-        if self.pending:
-            print(f"Waiting for {len(self.pending)} pods to initialize...")
-        while self.pending:
-            self.update()
-            time.sleep(0.1)
-
-    def update(self):
-        datas = PodData.get_all()
-        by_id = {data.id: data for data in datas}
-        had = set(self.by_id.keys())
-        got = set(by_id.keys())
-        pend = set(self.pending)
-        if got - had - pend:
-            print("Warning: unrecognized pods appeared.")
-        disappeared = had - got
-        if disappeared:
-            print("Warning: pods disappeared.")
-            for id in disappeared:
-                print(f"Warning: {self.by_id[id].data.name} with id {id} disappeared.")
-                # self.by_id.pop(id)
-        for id, pod in self.by_id.items():
-            if id not in by_id:
-                continue
-            pod.update(by_id[id])
-        finished_init = pend & got
-        if finished_init:
-            for id in finished_init:
-                self.add_pod(self.pod_from_data(by_id[id]))
-
-    def pod_from_data(self, data: PodData) -> Pod:
-        return Pod(
-            project=self.project,
-            data=data,
-        )
-
-    @classmethod
-    def All(
-        cls,
-        project: Optional[RunProject] = None,
-        new_pods_config: Optional[PodCreationConfig] = None,
-    ) -> "Pods":
-        if project is None:
-            project = RunProject(folder=RunFolder.cwd())
-
-        poddatas = PodData.get_all()
-        pods = [Pod(project=project, data=pd) for pd in poddatas]
-        return cls(project=project, pods=pods, new_pods_config=new_pods_config)
-
-    def make_new_pods(self, n):
-        allpods = self.All()
-        current_largest_n = max(
-            map(
-                lambda x: int(x.replace("pod", "")),
-                allpods.by_name.keys(),
-            ),
-            default=-1,
-        )
-        for i in range(n):
-            r = self.new_pods_config.create_pod(f"pod{current_largest_n + i + 1}")
-            pod_id = str(r.stdout).split('pod "')[1].split('" created')[0]
-            self.pending.append(pod_id)
-
-    def purge(self):
-        for pod in self.pods:
-            pod.remove()
-        self.pods = []
-        self.by_id = {}
-        self.by_name = {}
-        self.wait_pending()
-        for pod in self.pods:
-            pod.remove()
-        self.pods = []
-        self.by_id = {}
-        self.by_name = {}
-        assert len(PodData.get_all()) == 0

@@ -30,7 +30,11 @@ class AddrEntry(BaseModel):
 
     @property
     def addr(self):
-        return f"root@{self.ip}:{self.port}"
+        return f"{self.host}:{self.port}"
+
+    @property
+    def host(self):
+        return f"root@{self.ip}"
 
 
 def runpod_info():
@@ -131,4 +135,3 @@ class PodData(BaseModel):
                 print(f"Pod {pod.name} not yet assigned address")
                 raise e
         return datas
-
