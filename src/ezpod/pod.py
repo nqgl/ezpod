@@ -5,6 +5,8 @@ from typing import Optional
 import time
 from patchwork.transfers import rsync
 from fabric import Connection
+
+# from ezpod.tmux import TMInstance
 from .pod_data import PodData
 from .create_pods import create_pod, PodCreationConfig
 import os
@@ -53,6 +55,7 @@ class TMInstance:
     def __init__(self, project: RunProject, data: PodData):
         self.proj = project
         self.data = data
+        self.cmd_n = 0
 
     @property
     def win_name(self):
@@ -71,14 +74,14 @@ class TMInstance:
         except:
             return self.proj.sesh.new_window(window_name=self.win_name)
 
-    def setup(self):
-        self.window.active_pane.send_keys(
-            f"vastrr; sid {self.i}; cd ~/code/ml/sae_components; rpy test --setup; do_vrr_logins"
-        )
-
     def run(self, cmd):
+        signal = f"{self.data.name}sig{self.cmd_n}"
+        cmd = f"{cmd}; tmux wait-for -S {signal}"
+        self.cmd_n += 1
         self.pane.send_keys(cmd)
         self.window
+        join = lambda: subprocess.run(f"tmux wait-for {signal}", shell=True, check=True)
+        return join
 
 
 class Pod:
@@ -130,17 +133,19 @@ class Pod:
         return promise, connection
 
     def run(self, cmd, in_folder=True):
+        cmd = f"source /etc/rp_environment; {cmd}"
         if in_folder:
             cmd = f"cd {self.project.folder.remote_name}; {cmd}"
         assert "'" not in cmd, "Support for single quotes not implemented yet."
         s = self.data.sshaddr.sshcmd
-        self.tmi.run(f"{s} -t '{cmd}'")
+        return self.tmi.run(f"{s} -t '{cmd}'")
 
     def setup(self):
         if "setup.py" in os.listdir(self.folder):
-            self.run(f"{self.project.pyname} -m pip install -e .")
+            return self.run(f"{self.project.pyname} -m pip install -e .")
         elif "requirements.txt" in os.listdir(self.folder):
-            self.run(f"{self.project.pyname} -m pip install -r requirements.txt")
+            return self.run(f"{self.project.pyname} -m pip install -r requirements.txt")
+        raise Exception("No setup.py or requirements.txt found.")
 
     def remove(self):
         r = subprocess.run(
@@ -182,8 +187,15 @@ class Pods:
 
     def run(self, cmd, in_folder=True):
         self.wait_pending()
-        for pod in self.pods:
-            pod.run(cmd, in_folder)
+        print(f"running {cmd} on all pods")
+        joins = [pod.run(cmd, in_folder) for pod in self.pods]
+        print("waiting for commands to finish...")
+        for join in joins:
+            join()
+        print("joining done.")
+
+    def runpy(self, cmd, in_folder=True):
+        self.run(f"{self.project.pyname} {cmd}", in_folder)
 
     def sync(self):  # todo do this async
         self.sync_async()
@@ -211,9 +223,13 @@ class Pods:
 
     def setup(self):
         self.sync()
-        self.wait_pending()
-        for pod in self.pods:
-            pod.setup()
+        # self.wait_pending()
+        print(f"setting up all pods")
+        joins = [pod.setup() for pod in self.pods]
+        print("waiting for setups to finish...")
+        for join in joins:
+            join()
+        print("setups done.")
 
     def add_pod(self, pod):
         if pod.data.id in self.by_id:
