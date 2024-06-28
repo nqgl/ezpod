@@ -14,8 +14,12 @@ import os
 
 
 class Pod:
-    def __init__(self, project: RunProject, data: PodData):
-        self.project = project
+    def __init__(
+        self,
+        data: PodData,
+        project: Optional[RunProject] = None,
+    ):
+        self.project = project or RunProject(folder=RunFolder.cwd())
         self.data: PodData = data
         self.tmi = TMInstance(project=project, data=data)
 
@@ -54,7 +58,7 @@ class Pod:
         promise = asyncrsync(
             c=connection,
             source=self.project.folder.local_path,
-            target=f"/root/",
+            target=f"/root/" + self.project.folder.remote_name,
             exclude=exclude,
             rsync_opts="-L",
             ssh_opts="-o StrictHostKeyChecking=no",
@@ -82,14 +86,20 @@ class Pod:
 
         opts = asyncssh.SSHClientConnectionOptions(username="root")
         async with asyncssh.connect(
-            self.data.sshaddr.ip, self.data.sshaddr.port, options=opts
+            self.data.sshaddr.ip,
+            self.data.sshaddr.port,
+            options=opts,
         ) as conn:
-            result = await conn.run(cmd, check=True)
-            print(self.data.name, result.stdout, end="")
 
-    async def run_async(self, cmd, in_folder=True):
-        # cmd = self.remote_command(cmd, in_folder)
+            result = await conn.run(cmd, check=False)
+            print(self.data.name, result.stdout, end="")
+            if result.stderr:
+                print("Error:", self.data.name, result.stderr)
+
+    async def run_async(self, cmd, in_folder=True, purge_after=False):
         await self.async_ssh_exec(self.command_extras(cmd, in_folder))
+        if purge_after:
+            self.remove()
 
     def setup(self):
         if "setup.py" in os.listdir(self.folder):
@@ -116,7 +126,8 @@ class Pod:
             raise Exception("Error removing pod.")
         if r.stdout:
             print(f"{self.data.name}: {r.stdout}")
-        self.tmi.pane.send_keys("exit")
+        # if self.tmi.proj:
+        #     self.tmi.pane.send_keys("exit")
 
     def update(self, data: PodData):
         if self.data != data:

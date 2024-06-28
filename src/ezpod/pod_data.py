@@ -59,7 +59,7 @@ class PodData(BaseModel):
     assigned_id: Optional[int] = None
 
     @classmethod
-    def fromline(cls, line):
+    def fromline(cls, line, skip_addrs=False):
         (
             podid,
             name,
@@ -94,9 +94,14 @@ class PodData(BaseModel):
             container=container,
             volume=volume,
             cost=cost,
-            addrs=[AddrEntry(addrstr.strip()) for addrstr in ipsandports.split("),")],
+            addrs=(
+                []
+                if skip_addrs
+                else [AddrEntry(addrstr.strip()) for addrstr in ipsandports.split("),")]
+            ),
             assigned_id=assigned_id,
         )
+
         return pod
 
     @property
@@ -120,6 +125,9 @@ class PodData(BaseModel):
                 if i == 99:
                     raise e
                 time.sleep(1)
+                if i > 30:
+                    print("purging failing pods")
+                    cls._purge_failing()
 
     @classmethod
     def _get_all(cls) -> list["PodData"]:
@@ -135,3 +143,25 @@ class PodData(BaseModel):
                 print(f"Pod {pod.name} not yet assigned address")
                 raise e
         return datas
+
+    @classmethod
+    def _purge_failing(cls) -> list["PodData"]:
+        info = runpod_info()
+        sp = info.split("\tPORTS")[1:]
+        assert len(sp) == 1
+        sp = sp[0]
+
+        for p in sp.split("\n")[1:-1]:
+            try:
+                pod = cls.fromline(p)
+                try:
+                    _ = pod.sshaddr  # check if assigned
+                except Exception as e:
+                    print(f"Pod {pod.name} not yet assigned address")
+                    raise e
+            except:
+                failpod = cls.fromline(p, skip_addrs=True)
+                from ezpod import Pod
+
+                pod = Pod(data=failpod)
+                pod.remove()

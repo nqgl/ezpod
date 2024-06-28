@@ -23,8 +23,8 @@ class Pods:
         assert len(self.by_id) == len(self.pods)
         assert len(self.by_name) == len(self.pods)
 
-    def run(self, cmd, in_folder=True):
-        self.run_async(cmd, in_folder)
+    def run(self, cmd, in_folder=True, purge_after=False):
+        self.run_async(cmd, in_folder, purge_after)
         return
 
         self.wait_pending()
@@ -35,14 +35,17 @@ class Pods:
             join()
         print("joining done.")
 
-    def run_async(self, cmd, in_folder=True):
+    def run_async(self, cmd, in_folder=True, purge_after=False):
         self.wait_pending()
         loop = asyncio.get_event_loop()
-        tasks = [loop.create_task(pod.run_async(cmd, in_folder)) for pod in self.pods]
+        tasks = [
+            loop.create_task(pod.run_async(cmd, in_folder, purge_after))
+            for pod in self.pods
+        ]
         loop.run_until_complete(asyncio.gather(*tasks))
 
-    def runpy(self, cmd, in_folder=True):
-        self.run(f"{self.project.pyname} {cmd}", in_folder)
+    def runpy(self, cmd, in_folder=True, purge_after=False):
+        self.run(f"{self.project.pyname} {cmd}", in_folder, purge_after)
 
     def sync(self):  # todo do this async
         self.sync_async()
