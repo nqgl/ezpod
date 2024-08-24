@@ -1,8 +1,10 @@
 import time
 import subprocess
+import os
 
 
 def create_pod(name):
+
     cmd = f'runpodctl create pod \
     --gpuType \'NVIDIA GeForce RTX 4090\' \
     --mem 60 \
@@ -39,11 +41,11 @@ from pydantic import BaseModel
 class PodCreationConfig(BaseModel):
     imgname: str = "runpod/pytorch:2.2.0-py3.10-cuda12.1.1-devel-ubuntu22.04"
     volume_mount_path: str = "/root/workspace"
-    volume_id: str = "ll7y06yojj"
-    template_id: str = "hczop1wb7d"
-    vcpu: int = 16
-    mem: int = 60
-    gpu_type: str = "NVIDIA GeForce RTX 4090"
+    volume_id: str = os.environ.get("EZPOD_VOLUME_ID", "ll7y06yojj")
+    template_id: str = os.environ.get("EZPOD_TEMPLATE_ID", "hczop1wb7d")
+    vcpu: int = os.environ.get("EZPOD_POD_VCPU", 16)
+    mem: int = os.environ.get("EZPOD_POD_MEM", 60)
+    gpu_type: str = os.environ.get("EZPOD_GPU_TYPE", "NVIDIA GeForce RTX 4090")
 
     def create_pod(self, name):
         cmd = f"runpodctl create pod \
