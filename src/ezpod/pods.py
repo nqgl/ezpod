@@ -1,7 +1,7 @@
 from ezpod.runproject import RunFolder, RunProject
 from ezpod.create_pods import PodCreationConfig
 from ezpod.pod import Pod
-from ezpod.pod_data import PodData
+from ezpod.pod_data import PodData, PURGED_POD_IDS
 from typing import Optional
 import asyncio
 import time
@@ -44,8 +44,11 @@ class Pods:
         ]
         loop.run_until_complete(asyncio.gather(*tasks))
 
-    def runpy(self, cmd, in_folder=True, purge_after=False):
-        self.run(f"{self.project.pyname} {cmd}", in_folder, purge_after)
+    def runpy(self, cmd, in_folder=True, purge_after=False, challenge_file=None):
+        cmd = f"{self.project.pyname} {cmd}"
+        if challenge_file:
+            cmd = f"{self.project.pyname} {challenge_file}; {cmd}"
+        self.run(cmd, in_folder, purge_after)
 
     def sync(self):  # todo do this async
         self.sync_async()
@@ -100,12 +103,33 @@ class Pods:
                 f"Pod {pod.data.name} initialized. {len(self.pending)} still pending."
             )
 
+    def remove_pod(self, pod: Pod):
+        rm = [pod]
+        if pod.data.id in self.by_id:
+            rm.append(self.by_id[pod.data.id])
+            del self.by_id[pod.data.id]
+        if pod.data.name in self.by_name:
+            rm.append(self.by_name[pod.data.name])
+            del self.by_name[pod.data.name]
+        for rmpod in rm:
+            if pod in self.pods:
+                self.pods.remove(rmpod)
+        if pod.data.id in self.pending:
+            self.pending.remove(pod.data.id)
+            print(f"Pod {pod.data.name} removed. {len(self.pending)} still pending.")
+
     def wait_pending(self):
         if self.pending:
             print(f"Waiting for {len(self.pending)} pods to initialize...")
         while self.pending:
+            for purged in PURGED_POD_IDS:
+                if purged in self.pending:
+                    self.pending.remove(purged)
             self.update()
             time.sleep(0.1)
+        for purged in PURGED_POD_IDS:
+            if purged in self.by_id:
+                self.remove_pod(self.by_id[purged])
 
     def update(self):
         datas = PodData.get_all()

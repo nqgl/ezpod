@@ -1,14 +1,16 @@
 import subprocess
 from pathlib import Path
 from typing import Optional
+import asyncssh.connection
 from patchwork.transfers import rsync
 from fabric import Connection
 
 from ezpod.runproject import RunFolder, RunProject
 from ezpod.tmux import TMInstance
+import asyncssh
 
 # from ezpod.tmux import TMInstance
-from .pod_data import PodData
+from .pod_data import PodData, PURGED_POD_IDS
 from .create_pods import create_pod
 import os
 
@@ -82,7 +84,6 @@ class Pod:
         return self.tmi.run(self.remote_command(cmd, in_folder))
 
     async def async_ssh_exec(self, cmd):
-        import asyncssh
 
         opts = asyncssh.SSHClientConnectionOptions(username="root")
         async with asyncssh.connect(
@@ -97,7 +98,13 @@ class Pod:
                 print("Error:", self.data.name, result.stderr)
 
     async def run_async(self, cmd, in_folder=True, purge_after=False):
-        await self.async_ssh_exec(self.command_extras(cmd, in_folder))
+        try:
+            await self.async_ssh_exec(self.command_extras(cmd, in_folder))
+        except asyncssh.connection.HostKeyNotVerifiable as e:
+            print(e)
+            print(f"Unable to verify pod. removing pod {self.data.name}")
+            self.remove()
+            return
         if purge_after:
             self.remove()
 
@@ -123,9 +130,15 @@ class Pod:
         )
         if r.stderr:
             print(r.stderr)
-            raise Exception("Error removing pod.")
+            print("Error removing pod. Retrying")
+            r = subprocess.run(
+                f"runpodctl remove pod {self.data.id}", shell=True, check=True
+            )
+            if r.stderr:
+                raise Exception("Error removing pod.")
         if r.stdout:
             print(f"{self.data.name}: {r.stdout}")
+        PURGED_POD_IDS.append(self.data.id)
         # if self.tmi.proj:
         #     self.tmi.pane.send_keys("exit")
 

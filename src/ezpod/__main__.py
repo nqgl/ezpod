@@ -20,7 +20,7 @@ def cli(mode, s):
         pods.make_new_pods(int(s))
     elif mode == "ex":
         pods = Pods.All()
-        pods.run(s)
+        pods.run_async(s)
     elif mode == "py":
         pods = Pods.All()
         pods.runpy(s)

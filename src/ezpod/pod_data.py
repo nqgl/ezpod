@@ -42,6 +42,9 @@ def runpod_info():
     return r.stdout.decode("utf-8")
 
 
+PURGED_POD_IDS = []
+
+
 class PodData(BaseModel):
     id: str
     name: str
@@ -163,5 +166,6 @@ class PodData(BaseModel):
                 failpod = cls.fromline(p, skip_addrs=True)
                 from ezpod import Pod
 
+                # PURGED_POD_IDS.append(failpod.id)
                 pod = Pod(data=failpod)
                 pod.remove()
