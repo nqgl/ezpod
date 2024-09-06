@@ -89,7 +89,7 @@ class Pods:
         loop.run_until_complete(asyncio.gather(*tasks))
         print("setups complete")
 
-    def add_pod(self, pod):
+    def add_pod(self, pod: Pod):
         if pod.data.id in self.by_id:
             raise Exception(f"Pod with id {pod.data.id} already exists.")
         if pod.data.name in self.by_name:
@@ -165,25 +165,45 @@ class Pods:
         cls,
         project: Optional[RunProject] = None,
         new_pods_config: Optional[PodCreationConfig] = None,
+        group: Optional[str] = None,
     ) -> "Pods":
         if project is None:
             project = RunProject(folder=RunFolder.cwd())
 
         poddatas = PodData.get_all()
+        if group is not None:
+            poddatas = [pd for pd in poddatas if pd.podname.group == group]
         pods = [Pod(project=project, data=pd) for pd in poddatas]
         return cls(project=project, pods=pods, new_pods_config=new_pods_config)
 
-    def make_new_pods(self, n):
-        allpods = self.All()
+    @classmethod
+    def Range(
+        cls,
+        min: int,
+        max: int,
+        project: Optional[RunProject] = None,
+        new_pods_config: Optional[PodCreationConfig] = None,
+    ) -> "Pods":
+        if project is None:
+            project = RunProject(folder=RunFolder.cwd())
+        poddatas = PodData.get_all()
+        pods = [Pod(project=project, data=pd) for pd in poddatas]
+
+    def make_new_pods(self, n, group=None):
+        allpods = self.All(group=group)
+        if group is None:
+            group = "pod"
+        assert "_" not in group
+        group = f"{group}_"
         current_largest_n = max(
             map(
-                lambda x: int(x.replace("pod", "")),
+                lambda x: int(x.replace(group, "")),
                 allpods.by_name.keys(),
             ),
             default=-1,
         )
         for i in range(n):
-            r = self.new_pods_config.create_pod(f"pod{current_largest_n + i + 1}")
+            r = self.new_pods_config.create_pod(f"{group}{current_largest_n + i + 1}")
             pod_id = str(r.stdout).split('pod "')[1].split('" created')[0]
             self.pending.append(pod_id)
 
@@ -200,3 +220,16 @@ class Pods:
         self.by_id = {}
         self.by_name = {}
         assert len(PodData.get_all()) == 0
+
+    def by_numid(self):
+        def getgroup(name):
+            return int(name.split(self.new_pods_config.groupname)[1])
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self.pods[key]
+        elif isinstance(key, str):
+            return self.by_name[key]
+        else:
+            raise TypeError("Invalid key type")
+        pods = Pods(self.project, list(self.pods), self.new_pods_config)
