@@ -1,6 +1,8 @@
-from ezpod import PodCreationConfig
 import argparse
+
 import click
+
+from ezpod import PodCreationConfig
 
 from ezpod.pods import Pods
 from ezpod.runproject import RunFolder, RunProject
@@ -29,7 +31,6 @@ def cli(mode, s):
         pods.sync()
     elif mode == "setup":
         pods = Pods.All()
-        pods.sync()
         pods.setup()
 
     print(s)

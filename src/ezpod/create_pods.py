@@ -1,6 +1,6 @@
-import time
-import subprocess
 import os
+import subprocess
+import time
 
 
 def create_pod(name):
@@ -39,9 +39,10 @@ from pydantic import BaseModel
 
 
 class PodCreationConfig(BaseModel):
-    imgname: str = "runpod/pytorch:2.2.0-py3.10-cuda12.1.1-devel-ubuntu22.04"
+    imgname: str = "nqgl/runpod_test"
+    # imgname: str = "runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04"
     volume_mount_path: str = "/root/workspace"
-    volume_id: str = os.environ.get("EZPOD_VOLUME_ID", "ll7y06yojj")
+    volume_id: str = os.environ.get("EZPOD_VOLUME_ID", "zolkhu27r2")
     template_id: str = os.environ.get("EZPOD_TEMPLATE_ID", "hczop1wb7d")
     vcpu: int = os.environ.get("EZPOD_POD_VCPU", 16)
     mem: int = os.environ.get("EZPOD_POD_MEM", 60)
