@@ -1,5 +1,5 @@
-from ezpod import PodCreationConfig
 import argparse
+
 import click
 import os
 from ezpod.pods import Pods

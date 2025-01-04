@@ -1,10 +1,12 @@
-from ezpod.runproject import RunFolder, RunProject
+import asyncio
+import os
+import time
+from typing import Optional
+
 from ezpod.create_pods import PodCreationConfig
 from ezpod.pod import Pod
 from ezpod.pod_data import PodData, PURGED_POD_IDS
-from typing import Optional
-import asyncio
-import time
+from ezpod.runproject import RunFolder, RunProject
 
 
 class Pods:
@@ -84,10 +86,44 @@ class Pods:
         #     join()
         # print("setups done.")
         loop = asyncio.get_event_loop()
-        tasks = [loop.create_task(pod.setup_async()) for pod in self.pods]
+        timeout = os.environ.get("EZPOD_SETUP_TIMEOUT", None)
+        min_complete_to_continue = os.environ.get(
+            "EZPOD_MIN_COMPLETE_TO_CONTINUE", None
+        )
+        if isinstance(min_complete_to_continue, str):
+            min_complete_to_continue = int(min_complete_to_continue)
+        wait_extra = 10
+        tasks = [
+            loop.create_task(pod.setup_async(), name=str(i))
+            for i, pod in enumerate(self.pods)
+        ]
         print("beginning setups, waiting for them to complete...")
-        loop.run_until_complete(asyncio.gather(*tasks))
-        print("setups complete")
+        dones = set()
+        t = 0
+        while min_complete_to_continue is None or (
+            len(dones) < min_complete_to_continue or wait_extra > 0
+        ):
+            dones, wips = loop.run_until_complete(
+                asyncio.wait(tasks, timeout=3),
+            )
+            t += 3
+            if len(wips) == 0:
+                break
+            if min_complete_to_continue and len(dones) > min_complete_to_continue:
+                wait_extra -= 3
+
+            print(
+                f"waiting for {len(wips)} pods to finish setup. {len(dones)} complete."
+            )
+        to_cancel: set[Pod] = set()
+        for wip in wips:
+            i = int(wip.get_name())
+            print(f"Pod {i} setup timed out.")
+            to_cancel.add(self.pods[i])
+            wip.cancel()
+        for pod in to_cancel:
+            self.remove_pod(pod)
+            pod.remove()
 
     def add_pod(self, pod: Pod):
         if pod.data.id in self.by_id:
