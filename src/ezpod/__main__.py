@@ -33,7 +33,7 @@ def cli(group, i, all):
         if "-" in i:
             s = slice(*[None if n == "" else int(n) for n in i.split("-")])
             pods = pods[s]
-    print("group:", group)
+    # print("group:", group)
 
 
 @cli.command()
