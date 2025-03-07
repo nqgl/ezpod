@@ -1,6 +1,7 @@
 import asyncio
 import os
 import time
+from datetime import datetime
 from typing import Optional
 
 from ezpod.create_pods import PodCreationConfig
@@ -24,8 +25,9 @@ class Pods:
         self.new_pods_config = new_pods_config or PodCreationConfig()
         assert len(self.by_id) == len(self.pods)
         assert len(self.by_name) == len(self.pods)
+        self.EZPOD_MIN_COMPLETE_TO_CONTINUE = None
 
-    def run(self, cmd, in_folder=True, purge_after=False):
+    def run(self, cmd: str | list[str], in_folder=True, purge_after=False):
         self.run_async(cmd, in_folder, purge_after)
         return
 
@@ -37,20 +39,91 @@ class Pods:
             join()
         print("joining done.")
 
-    def run_async(self, cmd, in_folder=True, purge_after=False):
+    def run_async(self, cmd: str | list[str], in_folder=True, purge_after=False):
         self.wait_pending()
         loop = asyncio.get_event_loop()
-        tasks = [
-            loop.create_task(pod.run_async(cmd, in_folder, purge_after))
-            for pod in self.pods
-        ]
+        if isinstance(cmd, str):
+            tasks = [
+                loop.create_task(pod.run_async(cmd, in_folder, purge_after))
+                for pod in self.pods
+            ]
+        elif isinstance(cmd, list) and all(isinstance(c, str) for c in cmd):
+            assert len(cmd) == len(self.pods)
+            tasks = [
+                loop.create_task(pod.run_async(c, in_folder, purge_after))
+                for pod, c in zip(self.pods, cmd)
+            ]
+        else:
+            raise ValueError(f"Invalid command type: {type(cmd)}")
         loop.run_until_complete(asyncio.gather(*tasks))
 
-    def runpy(self, cmd, in_folder=True, purge_after=False, challenge_file=None):
+    def to_py_cmd(
+        self, cmd: str | list[str], challenge_file: str | None = None, prefix_vars=None
+    ):
+        if isinstance(cmd, list):
+            return [
+                self.to_py_cmd(c, challenge_file, prefix_vars=prefix_vars) for c in cmd
+            ]
         cmd = f"{self.project.pyname} {cmd}"
+        if prefix_vars:
+            cmd = f"{prefix_vars} {cmd}"
         if challenge_file:
             cmd = f"{self.project.pyname} {challenge_file}; {cmd}"
-        self.run(cmd, in_folder, purge_after)
+        return cmd
+
+    def runpy(
+        self,
+        cmd: str | list[str],
+        in_folder=True,
+        purge_after=False,
+        challenge_file=None,
+    ):
+        self.run(
+            self.to_py_cmd(cmd, challenge_file=challenge_file),
+            in_folder=in_folder,
+            purge_after=purge_after,
+        )
+
+    def run_async_with_monitor(
+        self, cmd: str | list[str], monitor=None, in_folder=True, purge_after=False
+    ):
+        self.wait_pending()
+        if monitor is None:
+            from ezpod.test_read import monitor
+
+            monitor = monitor(self)
+        loop = asyncio.get_event_loop()
+        if isinstance(cmd, str):
+            tasks = [
+                loop.create_task(pod.run_async(cmd, in_folder, purge_after))
+                for pod in self.pods
+            ]
+        elif isinstance(cmd, list) and all(isinstance(c, str) for c in cmd):
+            assert len(cmd) == len(self.pods), f"{len(cmd)} != {len(self.pods)}"
+            tasks = [
+                loop.create_task(pod.run_async(c, in_folder, purge_after))
+                for pod, c in zip(self.pods, cmd)
+            ]
+        else:
+            raise ValueError(f"Invalid command type: {type(cmd)}")
+        tasks.append(monitor)
+        loop.run_until_complete(asyncio.gather(*tasks))
+
+    def runpy_with_monitor(
+        self,
+        cmd,
+        monitor=None,
+        in_folder=True,
+        purge_after=False,
+        challenge_file=None,
+        prefix_vars=None,
+    ):
+        return self.run_async_with_monitor(
+            self.to_py_cmd(cmd, challenge_file=challenge_file, prefix_vars=prefix_vars),
+            monitor=monitor,
+            in_folder=in_folder,
+            purge_after=purge_after,
+        )
 
     def sync(self):  # todo do this async
         self.sync_async()
@@ -87,8 +160,9 @@ class Pods:
         # print("setups done.")
         loop = asyncio.get_event_loop()
         timeout = os.environ.get("EZPOD_SETUP_TIMEOUT", None)
-        min_complete_to_continue = os.environ.get(
-            "EZPOD_MIN_COMPLETE_TO_CONTINUE", None
+        min_complete_to_continue = (
+            self.EZPOD_MIN_COMPLETE_TO_CONTINUE
+            or os.environ.get("EZPOD_MIN_COMPLETE_TO_CONTINUE", None)
         )
         if isinstance(min_complete_to_continue, str):
             min_complete_to_continue = int(min_complete_to_continue)
@@ -125,7 +199,7 @@ class Pods:
             self.remove_pod(pod)
             pod.remove()
 
-    def add_pod(self, pod):
+    def add_pod(self, pod: Pod):
         if pod.data.id in self.by_id:
             raise Exception(f"Pod with id {pod.data.id} already exists.")
         if pod.data.name in self.by_name:
@@ -201,25 +275,45 @@ class Pods:
         cls,
         project: Optional[RunProject] = None,
         new_pods_config: Optional[PodCreationConfig] = None,
+        group: Optional[str] = None,
     ) -> "Pods":
         if project is None:
             project = RunProject(folder=RunFolder.cwd())
 
         poddatas = PodData.get_all()
+        if group is not None:
+            poddatas = [pd for pd in poddatas if pd.podname.group == group]
         pods = [Pod(project=project, data=pd) for pd in poddatas]
         return cls(project=project, pods=pods, new_pods_config=new_pods_config)
 
-    def make_new_pods(self, n):
-        allpods = self.All()
+    @classmethod
+    def Range(
+        cls,
+        min: int,
+        max: int,
+        project: Optional[RunProject] = None,
+        new_pods_config: Optional[PodCreationConfig] = None,
+    ) -> "Pods":
+        if project is None:
+            project = RunProject(folder=RunFolder.cwd())
+        poddatas = PodData.get_all()
+        pods = [Pod(project=project, data=pd) for pd in poddatas]
+
+    def make_new_pods(self, n, group=None):
+        allpods = self.All(group=group)
+        if group is None:
+            group = "pod"
+        assert "_" not in group
+        group = f"{group}_"
         current_largest_n = max(
             map(
-                lambda x: int(x.replace("pod", "")),
+                lambda x: int(x.replace(group, "")),
                 allpods.by_name.keys(),
             ),
             default=-1,
         )
         for i in range(n):
-            r = self.new_pods_config.create_pod(f"pod{current_largest_n + i + 1}")
+            r = self.new_pods_config.create_pod(f"{group}{current_largest_n + i + 1}")
             pod_id = str(r.stdout).split('pod "')[1].split('" created')[0]
             self.pending.append(pod_id)
 
@@ -236,3 +330,61 @@ class Pods:
         self.by_id = {}
         self.by_name = {}
         assert len(PodData.get_all()) == 0
+
+    def by_numid(self):
+        def getgroup(name):
+            return int(name.split(self.new_pods_config.groupname)[1])
+
+    def get_running_pods(self) -> list[Pod]:
+        """Get list of pods that are currently running commands"""
+        return [
+            pod for pod in self.pods if pod.get_output() and pod.get_output().is_running
+        ]
+
+    def get_pod_status(self, name: str = None) -> str:
+        """Get a formatted status string for a specific pod or all pods"""
+        if name:
+            pod = self.by_name.get(name)
+            if not pod:
+                return f"Pod {name} not found"
+            output = pod.get_output()
+            if not output:
+                return f"Pod {name}: No command running"
+            status = (
+                "RUNNING"
+                if output.is_running
+                else f"FINISHED (code: {output.return_code})"
+            )
+            runtime = datetime.now() - output.start_time
+            return f"Pod {name}: {status} (runtime: {runtime})"
+
+        return "\n".join(self.get_pod_status(pod.data.name) for pod in self.pods)
+
+    def tail_pod(self, name: str, lines: int = 10) -> str:
+        """Get the last N lines of output from a specific pod"""
+        pod = self.by_name.get(name)
+        if not pod:
+            return f"Pod {name} not found"
+
+        output = pod.get_output()
+        if not output:
+            return f"No output available for pod {name}"
+
+        result = []
+        if output.stdout:
+            result.append("=== STDOUT ===")
+            result.extend(list(output.stdout)[-lines:])
+        if output.stderr:
+            result.append("=== STDERR ===")
+            result.extend(list(output.stderr)[-lines:])
+
+        return "\n".join(result)
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self.pods[key]
+        elif isinstance(key, str):
+            return self.by_name[key]
+        else:
+            raise TypeError("Invalid key type")
+        pods = Pods(self.project, list(self.pods), self.new_pods_config)

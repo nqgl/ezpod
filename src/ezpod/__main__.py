@@ -1,39 +1,86 @@
 import argparse
 
 import click
-
-from ezpod import PodCreationConfig
-
+import os
 from ezpod.pods import Pods
 from ezpod.runproject import RunFolder, RunProject
 
+pods: Pods = None
+GROUP = None
 
-@click.command()
-@click.argument(
-    "mode", type=click.Choice(["purge", "make", "ex", "py", "sync", "setup"])
-)
-# @click.argument("n", default=None, type=click.INT, required=False)
-@click.argument("s", default=None, type=click.STRING, required=False)
-def cli(mode, s):
-    if mode == "purge":
-        Pods.All().purge()
-    elif mode == "make":
-        pods = Pods.All()
-        pods.make_new_pods(int(s))
-    elif mode == "ex":
-        pods = Pods.All()
-        pods.run_async(s)
-    elif mode == "py":
-        pods = Pods.All()
-        pods.runpy(s)
-    elif mode == "sync":
-        pods = Pods.All()
-        pods.sync()
-    elif mode == "setup":
-        pods = Pods.All()
-        pods.setup()
 
-    print(s)
+@click.group()
+@click.option("--group", default="")
+@click.option("--i", default="")
+@click.option("--all", is_flag=True)
+def cli(group, i, all):
+    global pods
+    global GROUP
+    if all:
+        assert not group
+        assert not i
+        GROUP = None
+        pods = Pods.All()
+        return
+    if group == "":
+        group = os.environ.get("EZPOD_GROUP", None)
+    GROUP = group
+    if group:
+        pods = Pods.All(group=group)
+    else:
+        pods = Pods.All()
+    if i:
+        if "-" in i:
+            s = slice(*[None if n == "" else int(n) for n in i.split("-")])
+            pods = pods[s]
+    # print("group:", group)
+
+
+@cli.command()
+def purge():
+    Pods.All().purge()
+
+
+@cli.command()
+@click.argument("s")
+def make(s):
+    # nonlocal pods
+    pods.make_new_pods(int(s))
+
+
+@cli.command()
+@click.argument("s")
+def ex(s):
+    # nonlocal pods
+    print("ex")
+
+    pods.run_async(s)
+
+
+@cli.command()
+@click.argument("s")
+def py(s):
+    # nonlocal pods
+    pods.runpy(s)
+
+
+@cli.command()
+@click.argument("s")
+def ssh(s):
+    # nonlocal pods
+    print(pods.pods[int(s)].data.sshaddr.sshcmd)
+
+
+@cli.command()
+def sync():
+    # nonlocal pods
+    pods.sync()
+
+
+@cli.command()
+def setup():
+    pods.sync()
+    pods.setup()
 
 
 if __name__ == "__main__":

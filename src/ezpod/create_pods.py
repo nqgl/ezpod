@@ -42,13 +42,15 @@ class PodCreationConfig(BaseModel):
     imgname: str = "nqgl/runpod_test"
     # imgname: str = "runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04"
     volume_mount_path: str = "/root/workspace"
-    volume_id: str = os.environ.get("EZPOD_VOLUME_ID", "zolkhu27r2")
+    volume_id: str = os.environ.get("EZPOD_VOLUME_ID", "m7r7qattcz")
     template_id: str = os.environ.get("EZPOD_TEMPLATE_ID", "hczop1wb7d")
     vcpu: int = os.environ.get("EZPOD_POD_VCPU", 16)
     mem: int = os.environ.get("EZPOD_POD_MEM", 60)
     gpu_type: str = os.environ.get("EZPOD_GPU_TYPE", "NVIDIA GeForce RTX 4090")
+    volume_size: int = os.environ.get("EZPOD_VOLUME_SIZE", 100)
 
     def create_pod(self, name):
+        print("template_id", self.template_id)
         cmd = f"runpodctl create pod \
         --gpuType '{self.gpu_type}' \
         --mem {self.mem} \
@@ -59,6 +61,7 @@ class PodCreationConfig(BaseModel):
         --volumePath {self.volume_mount_path} \
         --imageName {self.imgname} \
         --secureCloud \
+        --volumeSize {self.volume_size} \
         --args 'bash -c \" apt update; apt install -y git rsync; \
         DEBIAN_FRONTEND=noninteractive apt-get install openssh-server -y; \
         mkdir -p ~/.ssh; \
@@ -69,6 +72,7 @@ class PodCreationConfig(BaseModel):
         service ssh start; \
         echo export WANDB_API_KEY=$WANDB_API_KEY >> /etc/rp_environment; \
         echo export HUGGINGFACE_API_KEY=$HUGGINGFACE_API_KEY >> /etc/rp_environment; \
+        echo export NEPTUNE_API_TOKEN=$NEPTUNE_API_TOKEN >> /etc/rp_environment; \
         /start.sh\"'"
         r = subprocess.run(cmd, shell=True, capture_output=True)
         print(r.stdout.decode("utf-8"))

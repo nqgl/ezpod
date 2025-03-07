@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 import subprocess
 from typing import Optional
 import time
@@ -45,9 +45,30 @@ def runpod_info():
 PURGED_POD_IDS = []
 
 
+class PodName(BaseModel):
+    group: str
+    num: int
+    bad_name_cant_parse: str | None = None
+
+    def __str__(self):
+        if self.bad_name_cant_parse is not None:
+            return self.bad_name_cant_parse
+        return f"{self.group}_{self.num}"
+
+    @classmethod
+    def from_str(cls, name: str):
+        try:
+            group, num = name.split("_")
+            return cls(group=group, num=int(num))
+        except:
+            print("ERROR: Failed to parse bad pod name:", name)
+            return cls(group="", num=0, bad_name_cant_parse=name)
+
+
 class PodData(BaseModel):
     id: str
-    name: str
+    # name: str
+    podname: PodName
     gpu_qty: int
     gpu_type: str
     imgname: str
@@ -59,7 +80,12 @@ class PodData(BaseModel):
     volume: int
     cost: float
     addrs: list[AddrEntry]
-    assigned_id: Optional[int] = None
+    # assigned_id: Optional[int] = None
+
+    @computed_field
+    @property
+    def name(self) -> str:
+        return str(self.podname)
 
     @classmethod
     def fromline(cls, line, skip_addrs=False):
@@ -79,14 +105,14 @@ class PodData(BaseModel):
             nothing,
         ) = line.split("\t")
         assert nothing == ""
-        if "pod" in name:
-            assigned_id = int((spl := name.split("pod"))[1])
-            assert len(spl) == 2
-        else:
-            assigned_id = None
+        # if "pod" in name:
+        #     assigned_id = int((spl := name.split("pod"))[1])
+        #     assert len(spl) == 2
+        # else:
+        #     assigned_id = None
         pod = cls(
             id=podid.strip(),
-            name=name.strip(),
+            podname=PodName.from_str(name.strip()),
             gpu_qty=gpu.split(" ")[0],
             gpu_type=" ".join(gpu.split(" ")[1:]),
             imgname=imgname,
@@ -102,7 +128,7 @@ class PodData(BaseModel):
                 if skip_addrs
                 else [AddrEntry(addrstr.strip()) for addrstr in ipsandports.split("),")]
             ),
-            assigned_id=assigned_id,
+            # assigned_id=assigned_id,
         )
 
         return pod
