@@ -82,8 +82,6 @@ def setup():
     pods.sync()
     pods.setup()
 
-    print(s)
-
 
 if __name__ == "__main__":
     cli()

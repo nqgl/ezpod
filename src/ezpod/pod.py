@@ -50,7 +50,33 @@ class Pod:
         folder = folder or self.project.folder
         exclude = []
         if ".gitignore" in os.listdir(self.folder):
-            exclude = open(folder.local / ".gitignore").read().split("\n")
+            exclude += [
+                ist
+                for i in open(folder.local / ".gitignore").read().split("\n")
+                if not (ist := i.strip()).startswith("#") and ist
+            ]
+        if ".ezpodignore" in os.listdir(self.folder):
+            exclude += [
+                ist
+                for i in open(folder.local / ".ezpodignore").read().split("\n")
+                if not (ist := i.strip()).startswith("#") and ist
+            ]
+        print("exclude", exclude)
+        if ".ezpodinclude" in os.listdir(self.folder):
+            include = [
+                ist
+                for i in open(folder.local / ".ezpodinclude").read().split("\n")
+                if not (ist := i.strip()).startswith("#") and ist
+            ]
+            print("include", include)
+            try:
+                for i in include:
+                    exclude.remove(i)
+            except ValueError as e:
+                raise Exception(
+                    ".ezpodinclude contains entries that are not ignored", e
+                )
+        print("exclude", exclude)
         exclude += [".git"]
 
         connection = Connection(self.data.sshaddr.addr, connect_kwargs={"timeout": 10})
@@ -69,8 +95,35 @@ class Pod:
 
         folder = folder or self.project.folder
         exclude = []
+        exclude += [".git"]
         if ".gitignore" in os.listdir(self.folder):
-            exclude = open(folder.local / ".gitignore").read().split("\n")
+            exclude += [
+                ist
+                for i in open(folder.local / ".gitignore").read().split("\n")
+                if not (ist := i.strip()).startswith("#") and ist
+            ]
+        if ".ezpodignore" in os.listdir(self.folder):
+            exclude += [
+                ist
+                for i in open(folder.local / ".ezpodignore").read().split("\n")
+                if not (ist := i.strip()).startswith("#") and ist
+            ]
+        print("exclude", exclude)
+        if ".ezpodinclude" in os.listdir(self.folder):
+            include = [
+                ist
+                for i in open(folder.local / ".ezpodinclude").read().split("\n")
+                if not (ist := i.strip()).startswith("#") and ist
+            ]
+            print("include", include)
+            try:
+                for i in include:
+                    exclude.remove(i)
+            except ValueError as e:
+                raise Exception(
+                    ".ezpodinclude contains entries that are not ignored", e
+                )
+        print("exclude", exclude)
         exclude += [".git"]
 
         connection = Connection(self.data.sshaddr.addr, connect_kwargs={"timeout": 10})
