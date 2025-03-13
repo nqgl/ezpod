@@ -1,5 +1,4 @@
 from ezpod.pod import Pod
-import argparse
 
 
 from patchwork.transfers import rsync
