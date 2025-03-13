@@ -13,10 +13,7 @@ from fabric import Connection
 from patchwork.transfers import rsync
 
 from ezpod.runproject import RunFolder, RunProject
-from ezpod.tmux import TMInstance
-from .create_pods import create_pod
 
-# from ezpod.tmux import TMInstance
 from .pod_data import PodData, PURGED_POD_IDS
 import asyncio
 
@@ -171,11 +168,13 @@ class Pod:
             async with conn.create_process(cmd) as process:
 
                 async def read_stdout():
+                    assert self.output is not None
                     async for line in process.stdout:
                         self.output.stdout.append(line)
                         # print("2", line)
 
                 async def read_stderr():
+                    assert self.output is not None
                     async for line in process.stderr:
                         self.output.stderr.append(line)
 
@@ -196,20 +195,13 @@ class Pod:
     async def run_async(self, cmd, in_folder=True, purge_after=False):
         try:
             await self.async_ssh_exec(self.command_extras(cmd, in_folder))
-        except asyncssh.connection.HostKeyNotVerifiable as e:
+        except asyncssh.connection.HostKeyNotVerifiable as e:  # type: ignore
             print(e)
             print(f"Unable to verify pod. removing pod {self.data.name}")
             self.remove()
             return
         if purge_after:
             self.remove()
-
-    def setup(self):
-        if "setup.py" in os.listdir(self.folder):
-            return self.run(f"{self.project.pyname} -m pip install -e .")
-        elif "requirements.txt" in os.listdir(self.folder):
-            return self.run(f"{self.project.pyname} -m pip install -r requirements.txt")
-        raise Exception("No setup.py or requirements.txt found.")
 
     def setup_async(self):
         if "setup.py" in os.listdir(self.folder):

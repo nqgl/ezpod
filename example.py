@@ -7,11 +7,12 @@ from ezpod.runproject import RunFolder, RunProject
 # folder to sync:
 folder = RunFolder(
     local_path="/home/username/code/xyz",  # local path to the dir to sync
-    remote_name="xyz",  # the name of the folder on the remote (it will go to /root/xyz)
+    # remote_name="xyz",  # the name of the folder on the remote (it will go to /root/xyz)
+    # remote name feature was removed, may add back later if needed
 )
 folder = RunFolder(
     local_path="/home/g/code/ml/sae_components",  # local path to the dir to sync
-    remote_name="xyz",  # the name of the folder on the remote (it will go to /root/xyz)
+    # remote_name="xyz",  # the name of the folder on the remote (it will go to /root/xyz)
 )
 
 

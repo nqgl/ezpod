@@ -2,7 +2,7 @@ import asyncio
 import os
 import time
 from datetime import datetime
-from typing import Optional
+from typing import Any, Coroutine, Optional
 
 from ezpod.create_pods import PodCreationConfig
 from ezpod.pod import Pod
@@ -93,6 +93,7 @@ class Pods:
 
             monitor = monitor(self)
         loop = asyncio.get_event_loop()
+        tasks: list[asyncio.Task | Coroutine[Any, Any, None]] = []
         if isinstance(cmd, str):
             tasks = [
                 loop.create_task(pod.run_async(cmd, in_folder, purge_after))
@@ -174,6 +175,7 @@ class Pods:
         print("beginning setups, waiting for them to complete...")
         dones = set()
         t = 0
+        wips = None
         while min_complete_to_continue is None or (
             len(dones) < min_complete_to_continue or wait_extra > 0
         ):
@@ -189,6 +191,7 @@ class Pods:
             print(
                 f"waiting for {len(wips)} pods to finish setup. {len(dones)} complete."
             )
+        assert wips is not None
         to_cancel: set[Pod] = set()
         for wip in wips:
             i = int(wip.get_name())
@@ -287,6 +290,19 @@ class Pods:
         return cls(project=project, pods=pods, new_pods_config=new_pods_config)
 
     @classmethod
+    def Nothing(
+        cls,
+        project: Optional[RunProject] = None,
+        new_pods_config: Optional[PodCreationConfig] = None,
+        group: Optional[str] = None,
+    ) -> "Pods":
+        if project is None:
+            project = RunProject(folder=RunFolder.cwd())
+
+        pods = []
+        return cls(project=project, pods=pods, new_pods_config=new_pods_config)
+
+    @classmethod
     def Range(
         cls,
         min: int,
@@ -294,10 +310,12 @@ class Pods:
         project: Optional[RunProject] = None,
         new_pods_config: Optional[PodCreationConfig] = None,
     ) -> "Pods":
+        assert False  # TODO
         if project is None:
             project = RunProject(folder=RunFolder.cwd())
         poddatas = PodData.get_all()
         pods = [Pod(project=project, data=pd) for pd in poddatas]
+        return cls(project=project, pods=pods, new_pods_config=new_pods_config)
 
     def make_new_pods(self, n, group=None):
         allpods = self.All(group=group)
@@ -331,17 +349,11 @@ class Pods:
         self.by_name = {}
         assert len(PodData.get_all()) == 0
 
-    def by_numid(self):
-        def getgroup(name):
-            return int(name.split(self.new_pods_config.groupname)[1])
-
     def get_running_pods(self) -> list[Pod]:
         """Get list of pods that are currently running commands"""
-        return [
-            pod for pod in self.pods if pod.get_output() and pod.get_output().is_running
-        ]
+        return [pod for pod in self.pods if pod.output and pod.output.is_running]
 
-    def get_pod_status(self, name: str = None) -> str:
+    def get_pod_status(self, name: str | None = None) -> str:
         """Get a formatted status string for a specific pod or all pods"""
         if name:
             pod = self.by_name.get(name)

@@ -2,7 +2,6 @@ Things your computer needs installed on it outside of the python dependencies:
 
 - runpodctl
   - set it up with your runpod API key and (this one may not be necessary?) give runpod your computer's pubkey
-- tmux
 - rsync
 
 To create pods from the python:
@@ -25,3 +24,5 @@ Optional environment variables:
 - EZPOD_POD_VCPU
 - EZPOD_POD_MEM
 - EZPOD_GPU_TYPE
+- EZPOD_VOLUME_SIZE
+- EZPOD_IMAGE_NAME (If you're using saeco, I recommend not modifying this one. It defaults to a custom image which gives faster setup.)

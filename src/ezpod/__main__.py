@@ -1,11 +1,9 @@
-import argparse
-
 import click
 import os
 from ezpod.pods import Pods
 from ezpod.runproject import RunFolder, RunProject
 
-pods: Pods = None
+pods: Pods = Pods.Nothing()
 GROUP = None
 
 
@@ -29,11 +27,11 @@ def cli(group, i, all):
         pods = Pods.All(group=group)
     else:
         pods = Pods.All()
+    assert pods is not None
     if i:
         if "-" in i:
             s = slice(*[None if n == "" else int(n) for n in i.split("-")])
-            pods = pods[s]
-    # print("group:", group)
+            pods = pods[s]  # TODO
 
 
 @cli.command()
@@ -44,7 +42,7 @@ def purge():
 @cli.command()
 @click.argument("s")
 def make(s):
-    # nonlocal pods
+    global pods
     pods.make_new_pods(int(s))
 
 
