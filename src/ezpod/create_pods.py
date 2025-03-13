@@ -2,6 +2,7 @@ import os
 import subprocess
 
 from pydantic import BaseModel
+from .runpodctl_executor import runpod_login
 
 
 class PodCreationConfig(BaseModel):
@@ -14,8 +15,8 @@ class PodCreationConfig(BaseModel):
     gpu_type: str = os.environ.get("EZPOD_GPU_TYPE", "NVIDIA GeForce RTX 4090")
     volume_size: int = int(os.environ.get("EZPOD_VOLUME_SIZE", 100))
 
+    @runpod_login
     def create_pod(self, name):
-        print("template_id", self.template_id)
         cmd = f"runpodctl create pod \
         --gpuType '{self.gpu_type}' \
         --mem {self.mem} \

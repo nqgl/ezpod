@@ -1,5 +1,4 @@
 import os
-import subprocess
 from pathlib import Path
 from typing import Optional
 from collections import deque
@@ -11,8 +10,9 @@ import asyncssh
 import asyncssh.connection
 from fabric import Connection
 from patchwork.transfers import rsync
+from .runpodctl_executor import remove_pod
 
-from ezpod.runproject import RunFolder, RunProject
+from .runproject import RunFolder, RunProject
 
 from .pod_data import PodData, PURGED_POD_IDS
 import asyncio
@@ -213,15 +213,11 @@ class Pod:
         raise Exception("No setup.py or requirements.txt found.")
 
     def remove(self):
-        r = subprocess.run(
-            f"runpodctl remove pod {self.data.id}", shell=True, check=True
-        )
+        r = remove_pod(self.data.id)
         if r.stderr:
             print(r.stderr)
             print("Error removing pod. Retrying")
-            r = subprocess.run(
-                f"runpodctl remove pod {self.data.id}", shell=True, check=True
-            )
+            r = remove_pod(self.data.id)
             if r.stderr:
                 raise Exception("Error removing pod.")
         if r.stdout:

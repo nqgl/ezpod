@@ -1,7 +1,8 @@
 from pydantic import BaseModel, computed_field
-import subprocess
 from typing import Optional
 import time
+
+from .runpodctl_executor import runpod_info
 
 
 class AddrEntry(BaseModel):
@@ -35,11 +36,6 @@ class AddrEntry(BaseModel):
     @property
     def host(self):
         return f"root@{self.ip}"
-
-
-def runpod_info():
-    r = subprocess.run("runpodctl get pod -a", shell=True, capture_output=True)
-    return r.stdout.decode("utf-8")
 
 
 PURGED_POD_IDS = []

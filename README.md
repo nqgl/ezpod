@@ -26,3 +26,4 @@ Optional environment variables:
 - EZPOD_GPU_TYPE
 - EZPOD_VOLUME_SIZE
 - EZPOD_IMAGE_NAME (If you're using saeco, I recommend not modifying this one. It defaults to a custom image which gives faster setup.)
+- EZPOD_RUNPOD_API_KEY (Useful if you have multiple api keys you need to switch between.)
