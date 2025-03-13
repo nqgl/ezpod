@@ -35,6 +35,15 @@ def cli(group, i, all):
 
 
 @cli.command()
+def list():
+    if pods.pods:
+        for pod in pods.pods:
+            print(pod)
+    else:
+        print("No pods.")
+
+
+@cli.command()
 def purge():
     Pods.All().purge()
 
