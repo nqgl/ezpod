@@ -81,5 +81,12 @@ def setup():
     pods.setup()
 
 
+@cli.command()
+def print_create_config():
+    from ezpod.create_pods import PodCreationConfig
+
+    print(PodCreationConfig())
+
+
 if __name__ == "__main__":
     cli()
