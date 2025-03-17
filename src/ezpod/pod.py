@@ -20,10 +20,12 @@ import asyncio
 
 @dataclass
 class PodOutput:
+    command: str
     stdout: Deque[str]
     stderr: Deque[str]
-    start_time: datetime
     is_running: bool
+    start_time: datetime
+    end_time: Optional[datetime] = None
     return_code: Optional[asyncssh.SSHCompletedProcess] = None
 
 
@@ -153,6 +155,7 @@ class Pod:
     async def async_ssh_exec(self, cmd):
         # Initialize new output buffer for this command
         self.output = PodOutput(
+            command=cmd,
             stdout=deque(maxlen=self._max_lines),
             stderr=deque(maxlen=self._max_lines),
             start_time=datetime.now(),
@@ -186,6 +189,7 @@ class Pod:
                 await asyncio.gather(read_stdout(), read_stderr())
                 # print(3)
                 self.output.return_code = await process.wait()
+                self.output.end_time = datetime.now()
                 self.output.is_running = False
 
     def get_output(self) -> Optional[PodOutput]:

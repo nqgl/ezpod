@@ -3,10 +3,16 @@ from functools import wraps
 import os
 import warnings
 
+LOGGED_IN_THIS_SESSION = False
+
 
 def runpod_login(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
+        global LOGGED_IN_THIS_SESSION
+        if LOGGED_IN_THIS_SESSION:
+            return fn(*args, **kwargs)
+        LOGGED_IN_THIS_SESSION = True
         key = os.environ.get("EZPOD_RUNPOD_API_KEY", None)
         if key is not None:
             r = subprocess.run(

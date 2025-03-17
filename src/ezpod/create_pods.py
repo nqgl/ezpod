@@ -1,8 +1,12 @@
 import os
 import subprocess
-
+from pathlib import Path
 from pydantic import BaseModel
 from .runpodctl_executor import runpod_login
+
+PROFILES_PATH = Path(
+    os.environ.get("EZPOD_PROFILES_PATH", Path.cwd() / "ezpod_profiles")
+)
 
 
 class PodCreationConfig(BaseModel):
@@ -14,6 +18,20 @@ class PodCreationConfig(BaseModel):
     mem: int = int(os.environ.get("EZPOD_POD_MEM", 60))
     gpu_type: str = os.environ.get("EZPOD_GPU_TYPE", "NVIDIA GeForce RTX 4090")
     volume_size: int = int(os.environ.get("EZPOD_VOLUME_SIZE", 100))
+    disk_size: int = int(os.environ.get("EZPOD_DISK_SIZE", 20))
+
+    @classmethod
+    def from_profile(cls, profile: str | None = None):
+        if profile is None:
+            profile = os.environ.get("EZPOD_PROFILE", None)
+        if profile is None:
+            return cls()
+        cfg_path = PROFILES_PATH / f"{profile}.json"
+        return cls.model_validate_json(cfg_path.read_text())
+
+    @classmethod
+    def list_profiles(cls):
+        return [p.name for p in PROFILES_PATH.iterdir() if p.is_file()]
 
     @runpod_login
     def create_pod(self, name):
@@ -28,6 +46,7 @@ class PodCreationConfig(BaseModel):
         --imageName {self.imgname} \
         --secureCloud \
         --volumeSize {self.volume_size} \
+        --containerDiskSize {self.disk_size} \
         --args 'bash -c \" apt update; apt install -y git rsync; \
         DEBIAN_FRONTEND=noninteractive apt-get install openssh-server -y; \
         mkdir -p ~/.ssh; \
@@ -45,3 +64,48 @@ class PodCreationConfig(BaseModel):
         if r.stderr:
             raise Exception(r.stderr.decode("utf-8"))
         return r
+
+    @classmethod
+    def interactive_make(cls):
+        default = cls()
+        imgname = input(f"Image name (default: {default.imgname}): ") or default.imgname
+        volume_mount_path = (
+            input(f"Volume mount path (default: {default.volume_mount_path}): ")
+            or default.volume_mount_path
+        )
+        volume_id = (
+            input(f"Volume ID (default: {default.volume_id}): ") or default.volume_id
+        )
+        template_id = (
+            input(f"Template ID (default: {default.template_id}): ")
+            or default.template_id
+        )
+        vcpu = input(f"VCPU (default: {default.vcpu}): ") or default.vcpu
+        mem = input(f"Memory (default: {default.mem}): ") or default.mem
+        gpu_type = (
+            input(f"GPU Type (default: {default.gpu_type}): ") or default.gpu_type
+        )
+        volume_size = (
+            input(f"Volume Size (default: {default.volume_size}): ")
+            or default.volume_size
+        )
+        disk_size = (
+            input(f"Disk Size (default: {default.disk_size}): ") or default.disk_size
+        )
+        return cls(
+            imgname=imgname,
+            volume_mount_path=volume_mount_path,
+            volume_id=volume_id,
+            template_id=template_id,
+            vcpu=int(vcpu),
+            mem=int(mem),
+            gpu_type=gpu_type,
+            volume_size=int(volume_size),
+            disk_size=int(disk_size),
+        )
+
+    def save(self, name):
+        path = PROFILES_PATH / f"{name}.json"
+        if path.exists():
+            raise ValueError(f"Profile {name} already exists")
+        path.write_text(self.model_dump_json())

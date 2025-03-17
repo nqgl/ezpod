@@ -2,6 +2,7 @@ import click
 import os
 from ezpod.pods import Pods
 from ezpod.runproject import RunFolder, RunProject
+from ezpod.create_pods import PodCreationConfig
 
 pods: Pods = Pods.Nothing()
 GROUP = None
@@ -32,6 +33,24 @@ def cli(group, i, all):
         if "-" in i:
             s = slice(*[None if n == "" else int(n) for n in i.split("-")])
             pods = pods[s]  # TODO
+
+
+@cli.command()
+@click.argument("name")
+def create_profile(name):
+    cfg = PodCreationConfig.interactive_make()
+    cfg.save(name)
+
+
+@cli.command()
+@click.argument("name")
+def setprofile(name):
+    os.environ["EZPOD_PROFILE"] = name
+
+
+@cli.command()
+def profiles():
+    print(PodCreationConfig.list_profiles())
 
 
 @cli.command()
@@ -92,9 +111,8 @@ def setup():
 
 @cli.command()
 def print_create_config():
-    from ezpod.create_pods import PodCreationConfig
 
-    print(PodCreationConfig())
+    print(PodCreationConfig.from_profile())
 
 
 if __name__ == "__main__":
