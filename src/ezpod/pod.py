@@ -152,7 +152,7 @@ class Pod:
     # def run(self, cmd, in_folder=True):
     #     return self.tmi.run(self.remote_command(cmd, in_folder))
 
-    async def async_ssh_exec(self, cmd):
+    async def async_ssh_exec(self, cmd, output: PodOutput):
         # Initialize new output buffer for this command
         self.output = PodOutput(
             command=cmd,
@@ -196,9 +196,11 @@ class Pod:
         """Get the current output buffer for this pod"""
         return self.output
 
-    async def run_async(self, cmd, in_folder=True, purge_after=False):
+    async def run_async(
+        self, cmd, output: PodOutput, in_folder=True, purge_after=False
+    ):
         try:
-            await self.async_ssh_exec(self.command_extras(cmd, in_folder))
+            await self.async_ssh_exec(self.command_extras(cmd, in_folder), output)
         except asyncssh.connection.HostKeyNotVerifiable as e:  # type: ignore
             print(e)
             print(f"Unable to verify pod. removing pod {self.data.name}")
@@ -207,12 +209,13 @@ class Pod:
         if purge_after:
             self.remove()
 
-    def setup_async(self):
+    def setup_async(self, output: PodOutput):
         if "setup.py" in os.listdir(self.folder):
-            return self.run_async(f"{self.project.pyname} -m pip install -e .")
+            return self.run_async(f"{self.project.pyname} -m pip install -e .", output)
         elif "requirements.txt" in os.listdir(self.folder):
             return self.run_async(
-                f"{self.project.pyname} -m pip install -r requirements.txt"
+                f"{self.project.pyname} -m pip install -r requirements.txt",
+                output,
             )
         raise Exception("No setup.py or requirements.txt found.")
 
