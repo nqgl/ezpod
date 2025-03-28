@@ -1,11 +1,12 @@
 import asyncio
+from collections import deque
 import os
 import time
 from datetime import datetime
 from typing import Any, Coroutine, Optional
 
 from ezpod.create_pods import PodCreationConfig
-from ezpod.pod import Pod
+from ezpod.pod import Pod, PodOutput
 from ezpod.pod_data import PodData, PURGED_POD_IDS
 from ezpod.runproject import RunFolder, RunProject
 
@@ -26,6 +27,7 @@ class Pods:
         assert len(self.by_id) == len(self.pods)
         assert len(self.by_name) == len(self.pods)
         self.EZPOD_MIN_COMPLETE_TO_CONTINUE = None
+        self._output_max_lines = 1000
 
     def run(self, cmd: str | list[str], in_folder=True, purge_after=False):
         self.run_async(cmd, in_folder, purge_after)
@@ -39,9 +41,16 @@ class Pods:
             join()
         print("joining done.")
 
-    def run_async(self, cmd: str | list[str], in_folder=True, purge_after=False):
+    def run_async(
+        self,
+        cmd: str | list[str],
+        outputs: dict[Pod, PodOutput] | None = None,
+        in_folder=True,
+        purge_after=False,
+    ):
         self.wait_pending()
         loop = asyncio.get_event_loop()
+        outputs = outputs if outputs is not None else self.make_outputs(cmd)
         if isinstance(cmd, str):
             tasks = [
                 loop.create_task(pod.run_async(cmd, in_folder, purge_after))
@@ -254,6 +263,18 @@ class Pods:
             connection.close()
         print("done")
 
+    def make_outputs(self, command: str):
+        return {
+            p: PodOutput(
+                command=command,
+                stdout=deque(maxlen=self._output_max_lines),
+                stderr=deque(maxlen=self._output_max_lines),
+                start_time=datetime.now(),
+                is_running=True,
+            )
+            for p in self.pods
+        }
+
     def setup(self):
         self.sync()
         # # self.wait_pending()
@@ -272,8 +293,9 @@ class Pods:
         if isinstance(min_complete_to_continue, str):
             min_complete_to_continue = int(min_complete_to_continue)
         wait_extra = 10
+        outputs = self.make_outputs("<run setup>")
         tasks = [
-            loop.create_task(pod.setup_async(), name=str(i))
+            loop.create_task(pod.setup_async(outputs[pod]), name=str(i))
             for i, pod in enumerate(self.pods)
         ]
         print("beginning setups, waiting for them to complete...")
