@@ -6,27 +6,33 @@ import warnings
 LOGGED_IN_THIS_SESSION = False
 
 
+def log_in(key=None):
+    global LOGGED_IN_THIS_SESSION
+    LOGGED_IN_THIS_SESSION = True
+    if key is None:
+        key = os.environ.get("EZPOD_RUNPOD_API_KEY", None)
+    if key is not None:
+        r = subprocess.run(
+            f"runpodctl config --apiKey {key}",
+            shell=True,
+            check=True,
+            capture_output=True,
+        )
+        if r.stderr:
+            raise Exception(r.stderr.decode("utf-8"))
+    else:
+        warnings.warn(
+            "No EZPOD_RUNPOD_API_KEY environment variable found. Using existing runpodctl login."
+        )
+
+
 def runpod_login(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
         global LOGGED_IN_THIS_SESSION
         if LOGGED_IN_THIS_SESSION:
             return fn(*args, **kwargs)
-        LOGGED_IN_THIS_SESSION = True
-        key = os.environ.get("EZPOD_RUNPOD_API_KEY", None)
-        if key is not None:
-            r = subprocess.run(
-                f"runpodctl config --apiKey {key}",
-                shell=True,
-                check=True,
-                capture_output=True,
-            )
-            if r.stderr:
-                raise Exception(r.stderr.decode("utf-8"))
-        else:
-            warnings.warn(
-                "No EZPOD_RUNPOD_API_KEY environment variable found. Using existing runpodctl login."
-            )
+        log_in()
         return fn(*args, **kwargs)
 
     return wrapper

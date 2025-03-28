@@ -2,17 +2,18 @@ import os
 import subprocess
 from pathlib import Path
 from pydantic import BaseModel
-from .runpodctl_executor import runpod_login
+from .runpodctl_executor import log_in, runpod_login
 
 PROFILES_PATH = Path(
-    os.environ.get("EZPOD_PROFILES_PATH", Path.cwd() / "ezpod_profiles")
+    os.environ.get("EZPOD_PROFILES_PATH", Path.home() / ".ezpod_profiles")
 )
 
 
 class PodCreationConfig(BaseModel):
+    api_key: str | None = None
     imgname: str = os.environ.get("EZPOD_IMAGE_NAME", "nqgl/runpod_test")
     volume_mount_path: str = "/root/workspace"
-    volume_id: str = os.environ.get("EZPOD_VOLUME_ID", "m7r7qattcz")
+    volume_id: str = os.environ.get("EZPOD_VOLUME_ID", "m8xpzudogd")
     template_id: str = os.environ.get("EZPOD_TEMPLATE_ID", "hczop1wb7d")
     vcpu: int = int(os.environ.get("EZPOD_POD_VCPU", 16))
     mem: int = int(os.environ.get("EZPOD_POD_MEM", 60))
@@ -33,8 +34,9 @@ class PodCreationConfig(BaseModel):
     def list_profiles(cls):
         return [p.name for p in PROFILES_PATH.iterdir() if p.is_file()]
 
-    @runpod_login
     def create_pod(self, name):
+        log_in(self.api_key)
+        print("making", self)
         cmd = f"runpodctl create pod \
         --gpuType '{self.gpu_type}' \
         --mem {self.mem} \
@@ -92,7 +94,9 @@ class PodCreationConfig(BaseModel):
         disk_size = (
             input(f"Disk Size (default: {default.disk_size}): ") or default.disk_size
         )
+        api_key = input(f"API Key (default: {default.api_key}): ") or default.api_key
         return cls(
+            api_key=api_key,
             imgname=imgname,
             volume_mount_path=volume_mount_path,
             volume_id=volume_id,
