@@ -74,6 +74,54 @@ async def monitor(pods: "Pods"):
         print(f"selected pod: {selected_pod.data.name}")
 
 
+async def challenge_monitor(pods: "Pods", stop_after_n_complete: int | None):
+    running = pods.get_running_pods()
+    selected_pod = running[0] if running else None
+    selected_stream = "both"
+    user_input = ""
+    while not user_input == "quit":
+        try:
+            await asyncio.sleep(1)
+            user_input = input_with_timeout("command: ")
+        except TimeoutError:
+            user_input = ""
+        running = pods.get_running_pods()
+        if user_input:
+            if user_input[:3] == "sel":
+                if user_input == "sel":
+                    print(f"active pods: {[pod.data.name for pod in running]}")
+                    select = input("select pod: ")
+                else:
+                    select = user_input.split(" ")[1]
+                selected_pod = pods.by_name[select]
+            elif user_input == "std":
+                selected_stream = "stdout"
+            elif user_input == "err":
+                selected_stream = "stderr"
+            elif user_input == "both":
+                selected_stream = "both"
+        else:
+            ...
+        if selected_pod:
+
+            if selected_stream in ("stdout", "both"):
+                print("vvv=======STDOUT=======vvv")
+                for line in selected_pod.get_output().stdout:
+                    print(line, end="")
+                print("^^^^^^^^^^STDOUT^^^^^^^^^^")
+            print()
+            if selected_stream in ("stderr", "both"):
+                print("vvv=======STDERR=======vvv")
+                for line in selected_pod.get_output().stderr:
+                    print(line, end="")
+                print("^^^^^^^^^^STDERR^^^^^^^^^^")
+            print()
+
+            # print(selected_pod.output)
+        print(f"active pods: {[pod.data.name for pod in running]}")
+        print(f"selected pod: {selected_pod.data.name}")
+
+
 if __name__ == "__main__":
     pods = Pods.All()
 

@@ -1,11 +1,12 @@
 import asyncio
+from collections import deque
 import os
 import time
 from datetime import datetime
 from typing import Any, Coroutine, Optional
 
 from ezpod.create_pods import PodCreationConfig
-from ezpod.pod import Pod
+from ezpod.pod import Pod, PodOutput
 from ezpod.pod_data import PodData, PURGED_POD_IDS
 from ezpod.runproject import RunFolder, RunProject
 
@@ -15,6 +16,7 @@ class Pods:
         self,
         project: RunProject,
         pods: list[Pod],
+        group: Optional[str],
         new_pods_config: Optional[PodCreationConfig] = None,
     ):
         self.project = project
@@ -22,10 +24,16 @@ class Pods:
         self.pods = pods
         self.by_id = {pod.data.id: pod for pod in pods}
         self.by_name = {pod.data.name: pod for pod in pods}
-        self.new_pods_config = new_pods_config or PodCreationConfig()
+        self._new_pods_config = new_pods_config
         assert len(self.by_id) == len(self.pods)
         assert len(self.by_name) == len(self.pods)
         self.EZPOD_MIN_COMPLETE_TO_CONTINUE = None
+        self._output_max_lines = 1000
+        self.group = group
+
+    @property
+    def new_pods_config(self) -> Optional[PodCreationConfig]:
+        return self._new_pods_config or PodCreationConfig.from_profile()
 
     def run(self, cmd: str | list[str], in_folder=True, purge_after=False):
         self.run_async(cmd, in_folder, purge_after)
@@ -39,9 +47,16 @@ class Pods:
             join()
         print("joining done.")
 
-    def run_async(self, cmd: str | list[str], in_folder=True, purge_after=False):
+    def run_async(
+        self,
+        cmd: str | list[str],
+        outputs: dict[Pod, PodOutput] | None = None,
+        in_folder=True,
+        purge_after=False,
+    ):
         self.wait_pending()
         loop = asyncio.get_event_loop()
+        outputs = outputs if outputs is not None else self.make_outputs(cmd)
         if isinstance(cmd, str):
             tasks = [
                 loop.create_task(pod.run_async(cmd, in_folder, purge_after))
@@ -84,6 +99,40 @@ class Pods:
             purge_after=purge_after,
         )
 
+    def run_manual_challenge_file(
+        self, challenge_file: str, stop_after_n_complete: int | None = None
+    ):
+        loop = asyncio.get_event_loop()
+        cmd = self.to_py_cmd(challenge_file)
+        loop.run_until_complete(
+            self.run_async_with_monitor_and_timeout(
+                cmd, num_done_threshold=stop_after_n_complete
+            )
+        )
+
+    def prune(
+        self, n: int, challenge_file: str, stop_after_n_complete: int | None = None
+    ):
+        self.run_manual_challenge_file(challenge_file, stop_after_n_complete)
+        assert not any(p.output is None for p in self.pods)
+        for p in self.pods:
+            if p.output.end_time is None:
+                p.remove()
+        speeds = [
+            (p.output.end_time - p.output.start_time, p)
+            for p in self.pods
+            if p.output is not None
+            and p.output.end_time is not None
+            and p.output.start_time is not None
+        ]
+        speeds.sort()
+        sorted_pods = [p for _, p in speeds]
+        keep, toss = sorted_pods[:n], sorted_pods[n:]
+        for badpod in toss:
+            badpod.remove()
+
+        return speeds
+
     def run_async_with_monitor(
         self, cmd: str | list[str], monitor=None, in_folder=True, purge_after=False
     ):
@@ -94,6 +143,44 @@ class Pods:
             monitor = monitor(self)
         loop = asyncio.get_event_loop()
         tasks: list[asyncio.Task | Coroutine[Any, Any, None]] = []
+        if isinstance(cmd, str):
+            tasks = [
+                loop.create_task(
+                    pod.run_async(cmd, in_folder=in_folder, purge_after=purge_after)
+                )
+                for pod in self.pods
+            ]
+        elif isinstance(cmd, list) and all(isinstance(c, str) for c in cmd):
+            assert len(cmd) == len(self.pods), f"{len(cmd)} != {len(self.pods)}"
+            tasks = [
+                loop.create_task(
+                    pod.run_async(c, in_folder=in_folder, purge_after=purge_after)
+                )
+                for pod, c in zip(self.pods, cmd)
+            ]
+        else:
+            raise ValueError(f"Invalid command type: {type(cmd)}")
+        tasks.append(monitor)
+        loop.run_until_complete(asyncio.gather(*tasks))
+
+    async def run_async_with_monitor_and_timeout(
+        self,
+        cmd: str | list[str],
+        monitor=None,
+        in_folder=True,
+        purge_after=False,
+        timeout=1,
+        num_done_threshold: int | None = None,
+    ):
+        self.wait_pending()
+        if monitor is None:
+            from ezpod.test_read import monitor
+
+            monitor = monitor(self)
+
+        loop = asyncio.get_event_loop()
+        tasks: list[asyncio.Task] = []
+
         if isinstance(cmd, str):
             tasks = [
                 loop.create_task(pod.run_async(cmd, in_folder, purge_after))
@@ -107,8 +194,44 @@ class Pods:
             ]
         else:
             raise ValueError(f"Invalid command type: {type(cmd)}")
-        tasks.append(monitor)
-        loop.run_until_complete(asyncio.gather(*tasks))
+
+        monitor_task = loop.create_task(monitor)
+        all_tasks = tasks + [monitor_task]
+
+        while True:
+            # Wait for either the timeout or some tasks to complete
+            done, pending = await asyncio.wait(
+                all_tasks, timeout=timeout, return_when=asyncio.ALL_COMPLETED
+            )
+
+            # Check if we've reached our completion threshold (excluding the monitor)
+            cmd_tasks_done = [t for t in done if t in tasks]
+            if (
+                num_done_threshold is not None
+                and len(cmd_tasks_done) >= num_done_threshold
+            ):
+                print(
+                    f"Reached completion threshold: {len(cmd_tasks_done)}/{len(tasks)} tasks done"
+                )
+                break
+
+            # Check if all tasks are done
+            if len(pending) == 0:
+                print("All tasks completed")
+                break
+
+            # Optional: Check task status or do something with completed tasks
+            print(f"{len(done)} tasks completed, {len(pending)} tasks pending")
+        # Cancel any remaining tasks if needed
+        for task in all_tasks:
+            if not task.done():
+                task.cancel()
+
+        # Wait for cancellation to complete
+        try:
+            await asyncio.gather(*all_tasks, return_exceptions=True)
+        except asyncio.CancelledError:
+            pass
 
     def runpy_with_monitor(
         self,
@@ -133,7 +256,7 @@ class Pods:
         for pod in self.pods:
             pod.sync_folder()
 
-    def sync_async(self):
+    def sync_async(self, prev_failed=False):
         self.wait_pending()
         print("syncing...")
         promises = []
@@ -143,12 +266,31 @@ class Pods:
             promises.append(promise)
             connections.append(connection)
         print("all syncs started, waiting")
-        for promise in promises:
-            promise.join()
+        try:
+            for promise in promises:
+                promise.join()
+        except Exception as e:
+            if prev_failed:
+                raise e
+            print(f"failed sync with exception: {e}, retrying in 5 seconds...")
+            time.sleep(5)
+            self.sync_async(prev_failed=True)
         print("all syncs completed, closing connections")
         for connection in connections:
             connection.close()
         print("done")
+
+    def make_outputs(self, command: str):
+        return {
+            p: PodOutput(
+                command=command,
+                stdout=deque(maxlen=self._output_max_lines),
+                stderr=deque(maxlen=self._output_max_lines),
+                start_time=datetime.now(),
+                is_running=True,
+            )
+            for p in self.pods
+        }
 
     def setup(self):
         self.sync()
@@ -168,8 +310,9 @@ class Pods:
         if isinstance(min_complete_to_continue, str):
             min_complete_to_continue = int(min_complete_to_continue)
         wait_extra = 10
+        outputs = self.make_outputs("<run setup>")
         tasks = [
-            loop.create_task(pod.setup_async(), name=str(i))
+            loop.create_task(pod.setup_async(outputs[pod]), name=str(i))
             for i, pod in enumerate(self.pods)
         ]
         print("beginning setups, waiting for them to complete...")
@@ -199,7 +342,7 @@ class Pods:
             to_cancel.add(self.pods[i])
             wip.cancel()
         for pod in to_cancel:
-            self.remove_pod(pod)
+            self._remove_pod(pod)
             pod.remove()
 
     def add_pod(self, pod: Pod):
@@ -216,7 +359,7 @@ class Pods:
                 f"Pod {pod.data.name} initialized. {len(self.pending)} still pending."
             )
 
-    def remove_pod(self, pod: Pod):
+    def _remove_pod(self, pod: Pod):
         rm = [pod]
         if pod.data.id in self.by_id:
             rm.append(self.by_id[pod.data.id])
@@ -242,7 +385,7 @@ class Pods:
             time.sleep(0.1)
         for purged in PURGED_POD_IDS:
             if purged in self.by_id:
-                self.remove_pod(self.by_id[purged])
+                self._remove_pod(self.by_id[purged])
 
     def update(self):
         datas = PodData.get_all()
@@ -287,7 +430,9 @@ class Pods:
         if group is not None:
             poddatas = [pd for pd in poddatas if pd.podname.group == group]
         pods = [Pod(project=project, data=pd) for pd in poddatas]
-        return cls(project=project, pods=pods, new_pods_config=new_pods_config)
+        return cls(
+            project=project, pods=pods, new_pods_config=new_pods_config, group=group
+        )
 
     @classmethod
     def Nothing(
@@ -300,7 +445,9 @@ class Pods:
             project = RunProject(folder=RunFolder.cwd())
 
         pods = []
-        return cls(project=project, pods=pods, new_pods_config=new_pods_config)
+        return cls(
+            project=project, pods=pods, new_pods_config=new_pods_config, group=group
+        )
 
     @classmethod
     def Range(
@@ -317,10 +464,9 @@ class Pods:
         pods = [Pod(project=project, data=pd) for pd in poddatas]
         return cls(project=project, pods=pods, new_pods_config=new_pods_config)
 
-    def make_new_pods(self, n, group=None):
-        allpods = self.All(group=group)
-        if group is None:
-            group = "pod"
+    def make_new_pods(self, n):
+        allpods = self.All(group=self.group)
+        group = self.group or "pod"
         assert "_" not in group
         group = f"{group}_"
         current_largest_n = max(
@@ -394,9 +540,13 @@ class Pods:
 
     def __getitem__(self, key):
         if isinstance(key, int):
-            return self.pods[key]
+            pods_l = [self.pods[key]]
+        elif isinstance(key, slice):
+            pods_l = self.pods[key]
         elif isinstance(key, str):
-            return self.by_name[key]
+            pods_l = [self.by_name[key]]
         else:
             raise TypeError("Invalid key type")
-        pods = Pods(self.project, list(self.pods), self.new_pods_config)
+        return Pods(
+            self.project, pods_l, group=self.group, new_pods_config=self.new_pods_config
+        )

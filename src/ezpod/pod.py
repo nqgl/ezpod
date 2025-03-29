@@ -1,5 +1,4 @@
 import os
-import subprocess
 from pathlib import Path
 from typing import Optional
 from collections import deque
@@ -11,8 +10,9 @@ import asyncssh
 import asyncssh.connection
 from fabric import Connection
 from patchwork.transfers import rsync
+from .runpodctl_executor import remove_pod
 
-from ezpod.runproject import RunFolder, RunProject
+from .runproject import RunFolder, RunProject
 
 from .pod_data import PodData, PURGED_POD_IDS
 import asyncio
@@ -20,10 +20,12 @@ import asyncio
 
 @dataclass
 class PodOutput:
+    command: str
     stdout: Deque[str]
     stderr: Deque[str]
-    start_time: datetime
     is_running: bool
+    start_time: datetime
+    end_time: Optional[datetime] = None
     return_code: Optional[asyncssh.SSHCompletedProcess] = None
 
 
@@ -135,7 +137,8 @@ class Pod:
         return promise, connection
 
     def command_extras(self, cmd, in_folder=True):
-        cmd = f"source /etc/rp_environment; {cmd}"
+        cmd = f"source /etc/rp_environment; {self.activate_venv_cmd()}; {cmd}"
+
         if in_folder:
             cmd = f"cd {self.project.folder.remote_name}; {cmd}"
         return cmd
@@ -150,9 +153,10 @@ class Pod:
     # def run(self, cmd, in_folder=True):
     #     return self.tmi.run(self.remote_command(cmd, in_folder))
 
-    async def async_ssh_exec(self, cmd):
+    async def async_ssh_exec(self, cmd, output: PodOutput | None = None):
         # Initialize new output buffer for this command
         self.output = PodOutput(
+            command=cmd,
             stdout=deque(maxlen=self._max_lines),
             stderr=deque(maxlen=self._max_lines),
             start_time=datetime.now(),
@@ -186,15 +190,18 @@ class Pod:
                 await asyncio.gather(read_stdout(), read_stderr())
                 # print(3)
                 self.output.return_code = await process.wait()
+                self.output.end_time = datetime.now()
                 self.output.is_running = False
 
     def get_output(self) -> Optional[PodOutput]:
         """Get the current output buffer for this pod"""
         return self.output
 
-    async def run_async(self, cmd, in_folder=True, purge_after=False):
+    async def run_async(
+        self, cmd, in_folder=True, purge_after=False, output: PodOutput | None = None
+    ):
         try:
-            await self.async_ssh_exec(self.command_extras(cmd, in_folder))
+            await self.async_ssh_exec(self.command_extras(cmd, in_folder), output)
         except asyncssh.connection.HostKeyNotVerifiable as e:  # type: ignore
             print(e)
             print(f"Unable to verify pod. removing pod {self.data.name}")
@@ -203,25 +210,29 @@ class Pod:
         if purge_after:
             self.remove()
 
-    def setup_async(self):
+    def activate_venv_cmd(self):
+        return f"cd ~; {self.project.pyname} -m venv --system-site-packages .venv; source .venv/bin/activate; cd -"
+
+    def setup_async(self, output: PodOutput):
         if "setup.py" in os.listdir(self.folder):
-            return self.run_async(f"{self.project.pyname} -m pip install -e .")
+            return self.run_async(
+                f"{self.project.pyname} -m pip install --ignore-installed blinker ;"  # TODO MAKE GENERAL DIRECTORY SPECIFIC SETUP RULES OPTION
+                + f"{self.project.pyname} -m pip install -e .",
+                output,
+            )
         elif "requirements.txt" in os.listdir(self.folder):
             return self.run_async(
-                f"{self.project.pyname} -m pip install -r requirements.txt"
+                f"{self.project.pyname} -m pip install -r requirements.txt",
+                output,
             )
         raise Exception("No setup.py or requirements.txt found.")
 
     def remove(self):
-        r = subprocess.run(
-            f"runpodctl remove pod {self.data.id}", shell=True, check=True
-        )
+        r = remove_pod(self.data.id)
         if r.stderr:
             print(r.stderr)
             print("Error removing pod. Retrying")
-            r = subprocess.run(
-                f"runpodctl remove pod {self.data.id}", shell=True, check=True
-            )
+            r = remove_pod(self.data.id)
             if r.stderr:
                 raise Exception("Error removing pod.")
         if r.stdout:
@@ -238,3 +249,6 @@ class Pod:
         if self.data.name != data.name:
             raise Exception("Pod name changed.")
         self.data = data
+
+    def __repr__(self):
+        return f"{self.data.name} ({self.data.id}, {self.data.gpu_type})"
