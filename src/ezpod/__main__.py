@@ -3,16 +3,17 @@ import os
 from ezpod.pods import Pods
 from ezpod.runproject import RunFolder, RunProject
 from ezpod.create_pods import PodCreationConfig
+from ezpod.shell_local_data import Account
 
-pods: Pods = None  # Pods.Nothing()
+pods: Pods | None = None
 GROUP = None
 
 
 @click.group()
-@click.option("--group", default="")
+@click.option("--group", default=None)
 @click.option("--i", default="")
 @click.option("--all", is_flag=True)
-def cli(group, i, all):
+def cli(group: str | None, i: str, all: bool):
     global pods
     global GROUP
     if all:
@@ -21,22 +22,32 @@ def cli(group, i, all):
         GROUP = None
         pods = Pods.All()
         return
-    if group == "":
-        group = os.environ.get("EZPOD_GROUP", None)
+    if not group:
+        account = Account.load()
+        env_var = os.environ.get("EZPOD_GROUP", None)
+        if account.default_group is not None and env_var is not None:
+            raise ValueError("Both EZPOD_GROUP and default_group are set")
+        group = env_var or account.default_group
     GROUP = group
     if group:
         pods = Pods.All(group=group)
     else:
         pods = Pods.All()
     assert pods is not None
-    if i:
-        if "-" in i:
-            s = slice(*[None if n == "" else int(n) for n in i.split("-")])
-            pods = pods[s]  # TODO
+    if not i:
+        return
+    if "-" in i:
+        s = slice(*[None if n == "" else int(n) for n in i.split("-")])
+        pods = pods[s]  # TODO
+    elif i.isnumeric():
+        pods = pods[int(i)]
+    else:
+        pods = pods[i]
 
 
 @cli.command()
 def list():
+    assert pods is not None
     if pods.pods:
         for pod in pods.pods:
             print(pod)
@@ -46,13 +57,15 @@ def list():
 
 @cli.command()
 def purge():
-    Pods.All().purge()
+    assert pods is not None
+    pods.purge()
 
 
 @cli.command()
 @click.argument("s")
 def make(s):
     global pods
+    assert pods is not None
     pods.make_new_pods(int(s))
 
 
@@ -60,6 +73,8 @@ def make(s):
 @click.argument("s")
 def ex(s):
     # nonlocal pods
+    assert pods is not None
+
     print("ex")
 
     pods.run_async(s)
@@ -69,6 +84,8 @@ def ex(s):
 @click.argument("s")
 def py(s):
     # nonlocal pods
+    assert pods is not None
+
     pods.runpy(s)
 
 
@@ -76,6 +93,8 @@ def py(s):
 @click.argument("s")
 def ssh(s):
     # nonlocal pods
+    assert pods is not None
+
     print(pods.pods[int(s)].data.sshaddr.sshcmd)
 
 
@@ -113,12 +132,9 @@ def profiles():
 
 @cli.command()
 def create_account():
-    name = input("Account name: ")
-    api_key = input("API key: ")
-    from .shell_local_data import Account, save_account
+    from .shell_local_data import Account
 
-    account = Account(api_key=api_key)
-    save_account(name, account)
+    Account.interactive_create()
 
 
 @cli.command()

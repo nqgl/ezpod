@@ -2,7 +2,6 @@ import os
 import subprocess
 from pathlib import Path
 from pydantic import BaseModel
-from .runpodctl_executor import log_in, runpod_login
 import tempfile
 from .shell_local_data import (
     current_account_name,
@@ -11,6 +10,7 @@ from .shell_local_data import (
     set_current_profile,
     acct_profiles,
 )
+from .runpodctl_executor import runpod_run
 
 
 class PodCreationConfig(BaseModel):
@@ -38,7 +38,6 @@ class PodCreationConfig(BaseModel):
     def list_profiles(cls):
         return [p.name for p in acct_profiles().iterdir() if p.is_file()]
 
-    @runpod_login
     def create_pod(self, name):
         print("making", self)
         pubkey = os.environ.get("EZPOD_PUBLIC_KEY", None)
@@ -54,7 +53,7 @@ class PodCreationConfig(BaseModel):
             env_vars = f"echo export WANDB_API_KEY=$WANDB_API_KEY >> /etc/rp_environment; \
             echo export HUGGINGFACE_API_KEY=$HUGGINGFACE_API_KEY >> /etc/rp_environment; \
             echo export NEPTUNE_API_TOKEN=$NEPTUNE_API_TOKEN >> /etc/rp_environment;\n"
-        cmd = f"runpodctl create pod \
+        cmd = f"create pod \
         --gpuType '{self.gpu_type}' \
         --mem {self.mem} \
         --name {name} \
@@ -77,7 +76,7 @@ class PodCreationConfig(BaseModel):
         service ssh start; \
         {env_vars}\
         /start.sh\"'"
-        r = subprocess.run(cmd, shell=True, capture_output=True)
+        r = runpod_run(cmd)
         print(r.stdout.decode("utf-8"))
         if r.stderr:
             raise Exception(r.stderr.decode("utf-8"))

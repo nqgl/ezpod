@@ -137,7 +137,8 @@ class Pod:
         return promise, connection
 
     def command_extras(self, cmd, in_folder=True):
-        cmd = f"source /etc/rp_environment; {cmd}"
+        cmd = f"source /etc/rp_environment; {self.activate_venv_cmd()}; {cmd}"
+
         if in_folder:
             cmd = f"cd {self.project.folder.remote_name}; {cmd}"
         return cmd
@@ -209,9 +210,16 @@ class Pod:
         if purge_after:
             self.remove()
 
+    def activate_venv_cmd(self):
+        return f"cd ~; {self.project.pyname} -m venv --system-site-packages .venv; source .venv/bin/activate; cd -"
+
     def setup_async(self, output: PodOutput):
         if "setup.py" in os.listdir(self.folder):
-            return self.run_async(f"{self.project.pyname} -m pip install -e .", output)
+            return self.run_async(
+                f"{self.project.pyname} -m pip install --ignore-installed blinker ;"  # TODO MAKE GENERAL DIRECTORY SPECIFIC SETUP RULES OPTION
+                + f"{self.project.pyname} -m pip install -e .",
+                output,
+            )
         elif "requirements.txt" in os.listdir(self.folder):
             return self.run_async(
                 f"{self.project.pyname} -m pip install -r requirements.txt",
@@ -241,3 +249,6 @@ class Pod:
         if self.data.name != data.name:
             raise Exception("Pod name changed.")
         self.data = data
+
+    def __repr__(self):
+        return f"{self.data.name} ({self.data.id}, {self.data.gpu_type})"

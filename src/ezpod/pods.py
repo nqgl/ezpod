@@ -16,6 +16,7 @@ class Pods:
         self,
         project: RunProject,
         pods: list[Pod],
+        group: Optional[str],
         new_pods_config: Optional[PodCreationConfig] = None,
     ):
         self.project = project
@@ -28,6 +29,7 @@ class Pods:
         assert len(self.by_name) == len(self.pods)
         self.EZPOD_MIN_COMPLETE_TO_CONTINUE = None
         self._output_max_lines = 1000
+        self.group = group
 
     @property
     def new_pods_config(self) -> Optional[PodCreationConfig]:
@@ -428,7 +430,9 @@ class Pods:
         if group is not None:
             poddatas = [pd for pd in poddatas if pd.podname.group == group]
         pods = [Pod(project=project, data=pd) for pd in poddatas]
-        return cls(project=project, pods=pods, new_pods_config=new_pods_config)
+        return cls(
+            project=project, pods=pods, new_pods_config=new_pods_config, group=group
+        )
 
     @classmethod
     def Nothing(
@@ -441,7 +445,9 @@ class Pods:
             project = RunProject(folder=RunFolder.cwd())
 
         pods = []
-        return cls(project=project, pods=pods, new_pods_config=new_pods_config)
+        return cls(
+            project=project, pods=pods, new_pods_config=new_pods_config, group=group
+        )
 
     @classmethod
     def Range(
@@ -458,10 +464,9 @@ class Pods:
         pods = [Pod(project=project, data=pd) for pd in poddatas]
         return cls(project=project, pods=pods, new_pods_config=new_pods_config)
 
-    def make_new_pods(self, n, group=None):
-        allpods = self.All(group=group)
-        if group is None:
-            group = "pod"
+    def make_new_pods(self, n):
+        allpods = self.All(group=self.group)
+        group = self.group or "pod"
         assert "_" not in group
         group = f"{group}_"
         current_largest_n = max(
@@ -535,9 +540,13 @@ class Pods:
 
     def __getitem__(self, key):
         if isinstance(key, int):
-            return self.pods[key]
+            pods_l = [self.pods[key]]
+        elif isinstance(key, slice):
+            pods_l = self.pods[key]
         elif isinstance(key, str):
-            return self.by_name[key]
+            pods_l = [self.by_name[key]]
         else:
             raise TypeError("Invalid key type")
-        pods = Pods(self.project, list(self.pods), self.new_pods_config)
+        return Pods(
+            self.project, pods_l, group=self.group, new_pods_config=self.new_pods_config
+        )
