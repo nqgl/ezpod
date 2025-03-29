@@ -3,14 +3,17 @@ import subprocess
 from pathlib import Path
 from pydantic import BaseModel
 from .runpodctl_executor import log_in, runpod_login
-
-PROFILES_PATH = Path(
-    os.environ.get("EZPOD_PROFILES_PATH", Path.home() / ".ezpod_profiles")
+import tempfile
+from .shell_local_data import (
+    current_account_name,
+    set_current_account,
+    current_profile_name,
+    set_current_profile,
+    acct_profiles,
 )
 
 
 class PodCreationConfig(BaseModel):
-    api_key: str | None = None
     imgname: str = os.environ.get("EZPOD_IMAGE_NAME", "nqgl/runpod_test")
     volume_mount_path: str = "/root/workspace"
     volume_id: str = os.environ.get("EZPOD_VOLUME_ID", "m8xpzudogd")
@@ -24,19 +27,33 @@ class PodCreationConfig(BaseModel):
     @classmethod
     def from_profile(cls, profile: str | None = None):
         if profile is None:
-            profile = os.environ.get("EZPOD_PROFILE", None)
+            profile = current_profile_name()
+            # profile = os.environ.get("EZPOD_PROFILE", None)
         if profile is None:
             return cls()
-        cfg_path = PROFILES_PATH / f"{profile}.json"
+        cfg_path = acct_profiles() / f"{profile}.json"
         return cls.model_validate_json(cfg_path.read_text())
 
     @classmethod
     def list_profiles(cls):
-        return [p.name for p in PROFILES_PATH.iterdir() if p.is_file()]
+        return [p.name for p in acct_profiles().iterdir() if p.is_file()]
 
+    @runpod_login
     def create_pod(self, name):
-        log_in(self.api_key)
         print("making", self)
+        pubkey = os.environ.get("EZPOD_PUBLIC_KEY", None)
+        extra_pubkey = ""
+        if pubkey:
+            extra_pubkey = f"echo {pubkey} >> authorized_keys"
+
+        if os.environ.get("EZPOD_INJECT_LOCAL_API_KEYS", False):
+            env_vars = f"echo export WANDB_API_KEY={os.environ.get('WANDB_API_KEY', '$WANDB_API_KEY')} >> /etc/rp_environment;\
+            echo export HUGGINGFACE_API_KEY={os.environ.get('HUGGINGFACE_API_KEY', '$HUGGINGFACE_API_KEY')} >> /etc/rp_environment;\
+            echo export NEPTUNE_API_TOKEN={os.environ.get('NEPTUNE_API_TOKEN', '$NEPTUNE_API_TOKEN')} >> /etc/rp_environment;\n"
+        else:
+            env_vars = f"echo export WANDB_API_KEY=$WANDB_API_KEY >> /etc/rp_environment; \
+            echo export HUGGINGFACE_API_KEY=$HUGGINGFACE_API_KEY >> /etc/rp_environment; \
+            echo export NEPTUNE_API_TOKEN=$NEPTUNE_API_TOKEN >> /etc/rp_environment;\n"
         cmd = f"runpodctl create pod \
         --gpuType '{self.gpu_type}' \
         --mem {self.mem} \
@@ -55,11 +72,10 @@ class PodCreationConfig(BaseModel):
         cd $_; \
         chmod 700 ~/.ssh; \
         echo \"$PUBLIC_KEY\" >> authorized_keys; \
+        {extra_pubkey}; \
         chmod 700 authorized_keys; \
         service ssh start; \
-        echo export WANDB_API_KEY=$WANDB_API_KEY >> /etc/rp_environment; \
-        echo export HUGGINGFACE_API_KEY=$HUGGINGFACE_API_KEY >> /etc/rp_environment; \
-        echo export NEPTUNE_API_TOKEN=$NEPTUNE_API_TOKEN >> /etc/rp_environment; \
+        {env_vars}\
         /start.sh\"'"
         r = subprocess.run(cmd, shell=True, capture_output=True)
         print(r.stdout.decode("utf-8"))
@@ -94,9 +110,9 @@ class PodCreationConfig(BaseModel):
         disk_size = (
             input(f"Disk Size (default: {default.disk_size}): ") or default.disk_size
         )
-        api_key = input(f"API Key (default: {default.api_key}): ") or default.api_key
+        # api_key = input(f"API Key (default: {default.api_key}): ") or default.api_key
         return cls(
-            api_key=api_key,
+            # api_key=api_key,
             imgname=imgname,
             volume_mount_path=volume_mount_path,
             volume_id=volume_id,
@@ -109,7 +125,7 @@ class PodCreationConfig(BaseModel):
         )
 
     def save(self, name):
-        path = PROFILES_PATH / f"{name}.json"
+        path = acct_profiles() / f"{name}.json"
         if path.exists():
             raise ValueError(f"Profile {name} already exists")
         path.write_text(self.model_dump_json())

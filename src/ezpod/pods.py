@@ -23,11 +23,15 @@ class Pods:
         self.pods = pods
         self.by_id = {pod.data.id: pod for pod in pods}
         self.by_name = {pod.data.name: pod for pod in pods}
-        self.new_pods_config = new_pods_config or PodCreationConfig.from_profile()
+        self._new_pods_config = new_pods_config
         assert len(self.by_id) == len(self.pods)
         assert len(self.by_name) == len(self.pods)
         self.EZPOD_MIN_COMPLETE_TO_CONTINUE = None
         self._output_max_lines = 1000
+
+    @property
+    def new_pods_config(self) -> Optional[PodCreationConfig]:
+        return self._new_pods_config or PodCreationConfig.from_profile()
 
     def run(self, cmd: str | list[str], in_folder=True, purge_after=False):
         self.run_async(cmd, in_folder, purge_after)
@@ -139,13 +143,17 @@ class Pods:
         tasks: list[asyncio.Task | Coroutine[Any, Any, None]] = []
         if isinstance(cmd, str):
             tasks = [
-                loop.create_task(pod.run_async(cmd, in_folder, purge_after))
+                loop.create_task(
+                    pod.run_async(cmd, in_folder=in_folder, purge_after=purge_after)
+                )
                 for pod in self.pods
             ]
         elif isinstance(cmd, list) and all(isinstance(c, str) for c in cmd):
             assert len(cmd) == len(self.pods), f"{len(cmd)} != {len(self.pods)}"
             tasks = [
-                loop.create_task(pod.run_async(c, in_folder, purge_after))
+                loop.create_task(
+                    pod.run_async(c, in_folder=in_folder, purge_after=purge_after)
+                )
                 for pod, c in zip(self.pods, cmd)
             ]
         else:
@@ -246,7 +254,7 @@ class Pods:
         for pod in self.pods:
             pod.sync_folder()
 
-    def sync_async(self):
+    def sync_async(self, prev_failed=False):
         self.wait_pending()
         print("syncing...")
         promises = []
@@ -256,8 +264,15 @@ class Pods:
             promises.append(promise)
             connections.append(connection)
         print("all syncs started, waiting")
-        for promise in promises:
-            promise.join()
+        try:
+            for promise in promises:
+                promise.join()
+        except Exception as e:
+            if prev_failed:
+                raise e
+            print(f"failed sync with exception: {e}, retrying in 5 seconds...")
+            time.sleep(5)
+            self.sync_async(prev_failed=True)
         print("all syncs completed, closing connections")
         for connection in connections:
             connection.close()

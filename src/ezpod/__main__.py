@@ -4,7 +4,7 @@ from ezpod.pods import Pods
 from ezpod.runproject import RunFolder, RunProject
 from ezpod.create_pods import PodCreationConfig
 
-pods: Pods = Pods.Nothing()
+pods: Pods = None  # Pods.Nothing()
 GROUP = None
 
 
@@ -33,24 +33,6 @@ def cli(group, i, all):
         if "-" in i:
             s = slice(*[None if n == "" else int(n) for n in i.split("-")])
             pods = pods[s]  # TODO
-
-
-@cli.command()
-@click.argument("name")
-def create_profile(name):
-    cfg = PodCreationConfig.interactive_make()
-    cfg.save(name)
-
-
-@cli.command()
-@click.argument("name")
-def setprofile(name):
-    os.environ["EZPOD_PROFILE"] = name
-
-
-@cli.command()
-def profiles():
-    print(PodCreationConfig.list_profiles())
 
 
 @cli.command()
@@ -107,6 +89,44 @@ def sync():
 def setup():
     pods.sync()
     pods.setup()
+
+
+@cli.command()
+@click.argument("name")
+def create_profile(name):
+    cfg = PodCreationConfig.interactive_make()
+    cfg.save(name)
+
+
+@cli.command()
+@click.argument("name")
+def setprofile(name):
+    from .shell_local_data import set_current_profile
+
+    set_current_profile(name)
+
+
+@cli.command()
+def profiles():
+    print(PodCreationConfig.list_profiles())
+
+
+@cli.command()
+def create_account():
+    name = input("Account name: ")
+    api_key = input("API key: ")
+    from .shell_local_data import Account, save_account
+
+    account = Account(api_key=api_key)
+    save_account(name, account)
+
+
+@cli.command()
+@click.argument("account")
+def login(account):
+    from .shell_local_data import set_current_account
+
+    set_current_account(account)
 
 
 @cli.command()

@@ -152,7 +152,7 @@ class Pod:
     # def run(self, cmd, in_folder=True):
     #     return self.tmi.run(self.remote_command(cmd, in_folder))
 
-    async def async_ssh_exec(self, cmd, output: PodOutput):
+    async def async_ssh_exec(self, cmd, output: PodOutput | None = None):
         # Initialize new output buffer for this command
         self.output = PodOutput(
             command=cmd,
@@ -197,7 +197,7 @@ class Pod:
         return self.output
 
     async def run_async(
-        self, cmd, output: PodOutput, in_folder=True, purge_after=False
+        self, cmd, in_folder=True, purge_after=False, output: PodOutput | None = None
     ):
         try:
             await self.async_ssh_exec(self.command_extras(cmd, in_folder), output)

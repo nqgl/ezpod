@@ -1,7 +1,7 @@
 import subprocess
 from functools import wraps
-import os
 import warnings
+from .shell_local_data import load_account
 
 LOGGED_IN_THIS_SESSION = False
 
@@ -9,8 +9,10 @@ LOGGED_IN_THIS_SESSION = False
 def log_in(key=None):
     global LOGGED_IN_THIS_SESSION
     LOGGED_IN_THIS_SESSION = True
-    if key is None:
-        key = os.environ.get("EZPOD_RUNPOD_API_KEY", None)
+    account = load_account()
+    key = account.api_key
+    # if key is None:
+    #     key = os.environ.get("EZPOD_RUNPOD_API_KEY", None)
     if key is not None:
         r = subprocess.run(
             f"runpodctl config --apiKey {key}",
