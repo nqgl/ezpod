@@ -43,7 +43,7 @@ class PodCreationConfig(BaseModel):
         pubkey = os.environ.get("EZPOD_PUBLIC_KEY", None)
         extra_pubkey = ""
         if pubkey:
-            extra_pubkey = f"echo {pubkey} >> authorized_keys"
+            extra_pubkey = f"echo {pubkey} >> authorized_keys;"
 
         if os.environ.get("EZPOD_INJECT_LOCAL_API_KEYS", False):
             env_vars = f"echo export WANDB_API_KEY={os.environ.get('WANDB_API_KEY', '$WANDB_API_KEY')} >> /etc/rp_environment;\
@@ -71,7 +71,7 @@ class PodCreationConfig(BaseModel):
         cd $_; \
         chmod 700 ~/.ssh; \
         echo \"$PUBLIC_KEY\" >> authorized_keys; \
-        {extra_pubkey}; \
+        {extra_pubkey} \
         chmod 700 authorized_keys; \
         service ssh start; \
         {env_vars}\
