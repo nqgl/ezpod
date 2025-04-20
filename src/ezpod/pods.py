@@ -9,8 +9,7 @@ from ezpod.create_pods import PodCreationConfig
 from ezpod.pod import Pod, PodOutput
 from ezpod.pod_data import PodData, PURGED_POD_IDS
 from ezpod.runproject import RunFolder, RunProject
-
-
+from functools import cached_property
 class Pods:
     def __init__(
         self,
@@ -31,7 +30,7 @@ class Pods:
         self._output_max_lines = 1000
         self.group = group
 
-    @property
+    @cached_property
     def new_pods_config(self) -> Optional[PodCreationConfig]:
         return self._new_pods_config or PodCreationConfig.from_profile()
 

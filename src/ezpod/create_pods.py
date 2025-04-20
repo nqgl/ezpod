@@ -20,6 +20,7 @@ class PodCreationConfig(BaseModel):
     template_id: str = os.environ.get("EZPOD_TEMPLATE_ID", "hczop1wb7d")
     vcpu: int = int(os.environ.get("EZPOD_POD_VCPU", 16))
     mem: int = int(os.environ.get("EZPOD_POD_MEM", 60))
+    gpu_count: int = 1
     gpu_type: str = os.environ.get("EZPOD_GPU_TYPE", "NVIDIA GeForce RTX 4090")
     volume_size: int = int(os.environ.get("EZPOD_VOLUME_SIZE", 100))
     disk_size: int = int(os.environ.get("EZPOD_DISK_SIZE", 20))
@@ -59,6 +60,7 @@ class PodCreationConfig(BaseModel):
         --name {name} \
         --networkVolumeId {self.volume_id} \
         --templateId {self.template_id} \
+        --gpuCount {self.gpu_count} \
         --vcpu {self.vcpu} \
         --volumePath {self.volume_mount_path} \
         --imageName {self.imgname} \

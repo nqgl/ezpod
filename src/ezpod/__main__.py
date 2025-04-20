@@ -4,6 +4,7 @@ from ezpod.pods import Pods
 from ezpod.runproject import RunFolder, RunProject
 from ezpod.create_pods import PodCreationConfig
 from ezpod.shell_local_data import Account
+from warnings import warn
 
 pods: Pods | None = None
 GROUP = None
@@ -26,7 +27,8 @@ def cli(group: str | None, i: str, all: bool):
         account = Account.load()
         env_var = os.environ.get("EZPOD_GROUP", None)
         if account.default_group is not None and env_var is not None:
-            raise ValueError("Both EZPOD_GROUP and default_group are set")
+            warn("Both EZPOD_GROUP and default_group are set")
+            warn(f"Using EZPOD_GROUP: {env_var}")
         group = env_var or account.default_group
     GROUP = group
     if group:
@@ -63,9 +65,25 @@ def purge():
 
 @cli.command()
 @click.argument("s")
-def make(s):
+@click.option("--mem", default=None)
+@click.option("--count", default=None)
+@click.option("--cpu", default=None)
+@click.option("--storage", default=None)
+def make(s, mem: int | None, count: int | None, cpu: int | None, storage: int | None):
     global pods
     assert pods is not None
+    if mem is not None:
+        print("Setting mem to", mem)
+        pods.new_pods_config.mem = mem
+    if count is not None:
+        print("Setting count to", count)
+        pods.new_pods_config.gpu_count = count
+    if cpu is not None:
+        print("Setting cpu to", cpu)
+        pods.new_pods_config.vcpu = cpu
+    if storage is not None:
+        print("Setting storage to", storage)
+        pods.new_pods_config.disk_size = storage
     pods.make_new_pods(int(s))
 
 
@@ -140,9 +158,9 @@ def create_account():
 @cli.command()
 @click.argument("account")
 def login(account):
-    from .shell_local_data import set_current_account
+    from .shell_local_data import flexible_login
 
-    set_current_account(account)
+    flexible_login(account)
 
 
 @cli.command()

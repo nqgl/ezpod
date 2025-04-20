@@ -45,7 +45,19 @@ async def monitor(pods: "Pods"):
                     select = input("select pod: ")
                 else:
                     select = user_input.split(" ")[1]
-                selected_pod = pods.by_name[select]
+                try:
+                    selected_pod = pods.by_name[select]
+                except KeyError:
+                    print(f"Pod '{select}' not found")
+                    matches = [pod for pod in pods.pods if select in pod.data.name]
+                    if matches:
+                        if len(matches) == 1:
+                            print(f"Found match: {matches[0].data.name}")
+                            selected_pod = matches[0]
+                        else:
+                            print("Multiple matches found:")
+                            for pod in matches:
+                                print(pod.data.name)
             elif user_input == "std":
                 selected_stream = "stdout"
             elif user_input == "err":
