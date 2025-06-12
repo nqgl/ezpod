@@ -1,21 +1,21 @@
+import asyncio
 import os
-from pathlib import Path
-from typing import Optional
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, Dict, Deque
+from pathlib import Path
+from typing import Deque, Dict, Optional
 
 import asyncssh
 import asyncssh.connection
 from fabric import Connection
 from patchwork.transfers import rsync
-from .runpodctl_executor import remove_pod
 
-from .runproject import RunFolder, RunProject
+from ezpod.PodDataProtocol import InstanceData
 
 from .pod_data import PodData, PURGED_POD_IDS
-import asyncio
+
+from .runproject import RunFolder, RunProject
 
 
 @dataclass
@@ -32,11 +32,11 @@ class PodOutput:
 class Pod:
     def __init__(
         self,
-        data: PodData,
+        data: InstanceData,
         project: Optional[RunProject] = None,
     ):
         self.project = project or RunProject(folder=RunFolder.cwd())
-        self.data: PodData = data
+        self.data: InstanceData = data
         # self.tmi = TMInstance(project=project, data=data)
         self.output: Optional[PodOutput] = None
         self._max_lines = 1000  # Could make this configurable in __init__ if needed
@@ -45,49 +45,49 @@ class Pod:
     def folder(self):
         return Path(self.project.folder.local_path)
 
-    def sync_folder(self, folder: Optional[RunFolder] = None):
-        folder = folder or self.project.folder
-        exclude = []
-        if ".gitignore" in os.listdir(self.folder):
-            exclude += [
-                ist
-                for i in open(folder.local / ".gitignore").read().split("\n")
-                if not (ist := i.strip()).startswith("#") and ist
-            ]
-        if ".ezpodignore" in os.listdir(self.folder):
-            exclude += [
-                ist
-                for i in open(folder.local / ".ezpodignore").read().split("\n")
-                if not (ist := i.strip()).startswith("#") and ist
-            ]
-        print("exclude", exclude)
-        if ".ezpodinclude" in os.listdir(self.folder):
-            include = [
-                ist
-                for i in open(folder.local / ".ezpodinclude").read().split("\n")
-                if not (ist := i.strip()).startswith("#") and ist
-            ]
-            print("include", include)
-            try:
-                for i in include:
-                    exclude.remove(i)
-            except ValueError as e:
-                raise Exception(
-                    ".ezpodinclude contains entries that are not ignored", e
-                )
-        print("exclude", exclude)
-        exclude += [".git"]
+    # def sync_folder(self, folder: Optional[RunFolder] = None):
+    #     folder = folder or self.project.folder
+    #     exclude = []
+    #     if ".gitignore" in os.listdir(self.folder):
+    #         exclude += [
+    #             ist
+    #             for i in open(folder.local / ".gitignore").read().split("\n")
+    #             if not (ist := i.strip()).startswith("#") and ist
+    #         ]
+    #     if ".ezpodignore" in os.listdir(self.folder):
+    #         exclude += [
+    #             ist
+    #             for i in open(folder.local / ".ezpodignore").read().split("\n")
+    #             if not (ist := i.strip()).startswith("#") and ist
+    #         ]
+    #     print("exclude", exclude)
+    #     if ".ezpodinclude" in os.listdir(self.folder):
+    #         include = [
+    #             ist
+    #             for i in open(folder.local / ".ezpodinclude").read().split("\n")
+    #             if not (ist := i.strip()).startswith("#") and ist
+    #         ]
+    #         print("include", include)
+    #         try:
+    #             for i in include:
+    #                 exclude.remove(i)
+    #         except ValueError as e:
+    #             raise Exception(
+    #                 ".ezpodinclude contains entries that are not ignored", e
+    #             )
+    #     print("exclude", exclude)
+    #     exclude += [".git"]
 
-        connection = Connection(self.data.sshaddr.addr, connect_kwargs={"timeout": 10})
-        rsync(
-            c=connection,
-            source=self.project.folder.local_path,
-            target=f"/root/",
-            exclude=exclude,
-            rsync_opts="-L",
-            ssh_opts="-o StrictHostKeyChecking=no",
-        )
-        connection.close()
+    #     connection = Connection(self.data.sshaddr.addr, connect_kwargs={"timeout": 10})
+    #     rsync(
+    #         c=connection,
+    #         source=self.project.folder.local_path,
+    #         target=f"/root/",
+    #         exclude=exclude,
+    #         rsync_opts="-L",
+    #         ssh_opts="-o StrictHostKeyChecking=no",
+    #     )
+    #     connection.close()
 
     def sync_folder_async(self, folder: Optional[RunFolder] = None):
         from ezpod.sync import asyncrsync
@@ -124,20 +124,21 @@ class Pod:
                 )
         print("exclude", exclude)
         exclude += [".git"]
-
+        print("syncing to", self.data.sshaddr)
         connection = Connection(self.data.sshaddr.addr, connect_kwargs={"timeout": 10})
         promise = asyncrsync(
             c=connection,
             source=self.project.folder.local_path,
-            target=f"/root/" + self.project.folder.remote_name,
+            target=f"{self.data.sshaddr.homedir}/{self.project.folder.remote_name}",
             exclude=exclude,
             rsync_opts="-L",
-            ssh_opts="-o StrictHostKeyChecking=no",
+            ssh_opts=self.data.sshaddr.full_opts,
         )
         return promise, connection
 
     def command_extras(self, cmd, in_folder=True):
-        cmd = f"source /etc/rp_environment; {self.activate_venv_cmd()}; {cmd}"
+        print("source_file", self.data.source_file, type(self.data))
+        cmd = f"source {self.data.source_file}; {self.activate_venv_cmd()}; {cmd}"
 
         if in_folder:
             cmd = f"cd {self.project.folder.remote_name}; {cmd}"
@@ -155,15 +156,23 @@ class Pod:
 
     async def async_ssh_exec(self, cmd, output: PodOutput | None = None):
         # Initialize new output buffer for this command
-        self.output = PodOutput(
+        output = output or PodOutput(
             command=cmd,
             stdout=deque(maxlen=self._max_lines),
             stderr=deque(maxlen=self._max_lines),
             start_time=datetime.now(),
             is_running=True,
         )
+        self.output = output
 
-        opts = asyncssh.SSHClientConnectionOptions(username="root")
+        opts = asyncssh.SSHClientConnectionOptions(
+            username=self.data.sshaddr.user,
+            **(
+                dict(client_keys=[Path(self.data.sshaddr.key_path)])  # type: ignore
+                if self.data.sshaddr.key_path
+                else {}
+            ),
+        )
         async with asyncssh.connect(
             self.data.sshaddr.ip,
             self.data.sshaddr.port,
@@ -192,6 +201,7 @@ class Pod:
                 self.output.return_code = await process.wait()
                 self.output.end_time = datetime.now()
                 self.output.is_running = False
+        return output
 
     def get_output(self) -> Optional[PodOutput]:
         """Get the current output buffer for this pod"""
@@ -201,7 +211,9 @@ class Pod:
         self, cmd, in_folder=True, purge_after=False, output: PodOutput | None = None
     ):
         try:
-            await self.async_ssh_exec(self.command_extras(cmd, in_folder), output)
+            output = await self.async_ssh_exec(
+                self.command_extras(cmd, in_folder), output
+            )
         except asyncssh.connection.HostKeyNotVerifiable as e:  # type: ignore
             print(e)
             print(f"Unable to verify pod. removing pod {self.data.name}")
@@ -209,9 +221,12 @@ class Pod:
             return
         if purge_after:
             self.remove()
+        return output
 
     def activate_venv_cmd(self):
-        return f"cd ~; {self.project.pyname} -m venv --system-site-packages .venv; source .venv/bin/activate; cd -"
+        if self.project.use_venv:
+            return f"cd ~; {self.project.pyname} -m venv --system-site-packages .venv; source .venv/bin/activate; cd -;"
+        return "echo skipping venv activation"
 
     def setup_async(self, output: PodOutput):
         if "setup.py" in os.listdir(self.folder):
@@ -228,11 +243,12 @@ class Pod:
         raise Exception("No setup.py or requirements.txt found.")
 
     def remove(self):
-        r = remove_pod(self.data.id)
+        r = self.data.remove_pod()
+        # r = remove_pod(self.data.id)
         if r.stderr:
             print(r.stderr)
             print("Error removing pod. Retrying")
-            r = remove_pod(self.data.id)
+            r = self.data.remove_pod()
             if r.stderr:
                 raise Exception("Error removing pod.")
         if r.stdout:
@@ -241,7 +257,7 @@ class Pod:
         # if self.tmi.proj:
         #     self.tmi.pane.send_keys("exit")
 
-    def update(self, data: PodData):
+    def update(self, data: InstanceData):
         if self.data != data:
             print(f"Pod {self.data.name} data changed.")
         if self.data.id != data.id:
@@ -251,4 +267,4 @@ class Pod:
         self.data = data
 
     def __repr__(self):
-        return f"{self.data.name} ({self.data.id}, {self.data.gpu_type})"
+        return f"{self.data.name} ({self.data.id}, {self.data.gpu_type}, {self.data.status})"

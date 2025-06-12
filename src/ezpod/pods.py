@@ -1,15 +1,17 @@
 import asyncio
-from collections import deque
 import os
 import time
+from collections import deque
 from datetime import datetime
+from functools import cached_property
 from typing import Any, Coroutine, Optional
 
 from ezpod.create_pods import PodCreationConfig
 from ezpod.pod import Pod, PodOutput
 from ezpod.pod_data import PodData, PURGED_POD_IDS
 from ezpod.runproject import RunFolder, RunProject
-from functools import cached_property
+
+
 class Pods:
     def __init__(
         self,
@@ -333,6 +335,8 @@ class Pods:
             print(
                 f"waiting for {len(wips)} pods to finish setup. {len(dones)} complete."
             )
+        for done in dones:
+            print("result", done.result())
         assert wips is not None
         to_cancel: set[Pod] = set()
         for wip in wips:
@@ -469,16 +473,31 @@ class Pods:
         assert "_" not in group
         group = f"{group}_"
         current_largest_n = max(
-            map(
-                lambda x: int(x.replace(group, "")),
-                allpods.by_name.keys(),
-            ),
+            [pod.data.podname.num for pod in allpods.pods],
             default=-1,
         )
         for i in range(n):
-            r = self.new_pods_config.create_pod(f"{group}{current_largest_n + i + 1}")
-            pod_id = str(r.stdout).split('pod "')[1].split('" created')[0]
-            self.pending.append(pod_id)
+            # Use the unified backend‑agnostic create() call.  It may return a
+            # backend specific identifier or a subprocess.CompletedProcess in
+            # the case of runpodctl.  We try to capture a pod/instance id when
+            # possible so that `wait_pending` can keep track of initialisation.
+
+            res = self.new_pods_config.create(f"{group}{current_largest_n + i + 1}")
+
+            # For the original RunPod backend the return value was a
+            # CompletedProcess; we parse its stdout to extract the pod ID so
+            # that the rest of the existing code keeps working without
+            # modifications.
+            pod_id: str | None = None
+            if isinstance(res, str):
+                pod_id = res
+            elif hasattr(res, "stdout"):
+                out = str(res.stdout)
+                if 'pod "' in out and '" created' in out:
+                    pod_id = out.split('pod "')[1].split('" created')[0]
+
+            if pod_id is not None:
+                self.pending.append(pod_id)
 
     def purge(self):
         for pod in self.pods:
@@ -548,4 +567,10 @@ class Pods:
             raise TypeError("Invalid key type")
         return Pods(
             self.project, pods_l, group=self.group, new_pods_config=self.new_pods_config
+        )
+
+    def get_alive(self) -> "Pods":
+        pods = [pod for pod in self.pods if pod.data.is_running]
+        return Pods(
+            self.project, pods, group=self.group, new_pods_config=self.new_pods_config
         )

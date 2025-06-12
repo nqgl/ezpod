@@ -64,6 +64,8 @@ async def monitor(pods: "Pods"):
                 selected_stream = "stderr"
             elif user_input == "both":
                 selected_stream = "both"
+            if user_input == "cmd":
+                print(selected_pod.get_output().command)
         else:
             ...
         if selected_pod:

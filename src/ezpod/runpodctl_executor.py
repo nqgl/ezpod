@@ -1,6 +1,9 @@
 import subprocess
-from functools import wraps
 import warnings
+from functools import wraps
+
+from .backend_aws_env_var import BACKEND_AWS
+
 from .shell_local_data import Account
 
 # LOGGED_IN_THIS_SESSION = False
@@ -42,6 +45,8 @@ from .shell_local_data import Account
 
 
 def runpod_run(cmd):
+    if BACKEND_AWS:
+        raise NotImplementedError("runpod_run_output not implemented for AWS")
     account = Account.load()
     key = account.api_key
 
@@ -60,12 +65,20 @@ def runpod_run_output(cmd):
 
 # @runpod_login
 def runpod_info():
+    if BACKEND_AWS:
+        raise NotImplementedError("runpod_info not implemented for AWS")
     return runpod_run_output("get pod -a")
     # r = subprocess.run("runpodctl get pod -a", shell=True, capture_output=True)
     # return r.stdout.decode("utf-8")
 
 
 # @runpod_login
-def remove_pod(id: str) -> subprocess.CompletedProcess:
-    return runpod_run(f"remove pod {id}")
-    # return subprocess.run(f"runpodctl remove pod {id}", shell=True, check=True)
+# def remove_pod(id: str) -> subprocess.CompletedProcess:
+#     if BACKEND_AWS:
+#         import boto3
+
+#         ec2 = boto3.resource("ec2")
+#         ec2.Instance(id).terminate()
+#         return
+#     return runpod_run(f"remove pod {id}")
+#     # return subprocess.run(f"runpodctl remove pod {id}", shell=True, check=True)
