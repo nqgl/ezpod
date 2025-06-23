@@ -27,7 +27,7 @@ from .shell_local_data import (
 class RunPodCreationConfig(BasePodCreationConfig):
     imgname: str = os.environ.get("EZPOD_IMAGE_NAME", "nqgl/runpod_test")
     volume_mount_path: str = "/root/workspace"
-    volume_id: str = os.environ.get("EZPOD_VOLUME_ID", "m8xpzudogd")
+    volume_id: str | None = os.environ.get("EZPOD_VOLUME_ID", "m8xpzudogd")
     template_id: str = os.environ.get("EZPOD_TEMPLATE_ID", "hczop1wb7d")
     vcpu: int = int(os.environ.get("EZPOD_POD_VCPU", 16))
     mem: int = int(os.environ.get("EZPOD_POD_MEM", 60))
@@ -65,11 +65,12 @@ class RunPodCreationConfig(BasePodCreationConfig):
             env_vars = f"echo export WANDB_API_KEY=$WANDB_API_KEY >> /etc/rp_environment; \
             echo export HUGGINGFACE_API_KEY=$HUGGINGFACE_API_KEY >> /etc/rp_environment; \
             echo export NEPTUNE_API_TOKEN=$NEPTUNE_API_TOKEN >> /etc/rp_environment;\n"
+        volume_id_arg = f"--networkVolumeId {self.volume_id}" if self.volume_id else ""
         cmd = f"create pod \
         --gpuType '{self.gpu_type}' \
         --mem {self.mem} \
         --name {name} \
-        --networkVolumeId {self.volume_id} \
+        {volume_id_arg} \
         --templateId {self.template_id} \
         --gpuCount {self.gpu_count} \
         --vcpu {self.vcpu} \
