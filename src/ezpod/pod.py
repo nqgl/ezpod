@@ -27,6 +27,16 @@ class PodOutput:
     return_code: Optional[asyncssh.SSHCompletedProcess] = None
 
 
+def parse_include_file(file: Path) -> set[str]:
+    if not file.exists():
+        return set()
+    return {
+        ist
+        for i in file.read_text().split("\n")
+        if not (ist := i.strip()).startswith("#") and ist
+    }
+
+
 class Pod:
     def __init__(
         self,
@@ -43,85 +53,22 @@ class Pod:
     def folder(self):
         return Path(self.project.folder.local_path)
 
-    # def sync_folder(self, folder: Optional[RunFolder] = None):
-    #     folder = folder or self.project.folder
-    #     exclude = []
-    #     if ".gitignore" in os.listdir(self.folder):
-    #         exclude += [
-    #             ist
-    #             for i in open(folder.local / ".gitignore").read().split("\n")
-    #             if not (ist := i.strip()).startswith("#") and ist
-    #         ]
-    #     if ".ezpodignore" in os.listdir(self.folder):
-    #         exclude += [
-    #             ist
-    #             for i in open(folder.local / ".ezpodignore").read().split("\n")
-    #             if not (ist := i.strip()).startswith("#") and ist
-    #         ]
-    #     print("exclude", exclude)
-    #     if ".ezpodinclude" in os.listdir(self.folder):
-    #         include = [
-    #             ist
-    #             for i in open(folder.local / ".ezpodinclude").read().split("\n")
-    #             if not (ist := i.strip()).startswith("#") and ist
-    #         ]
-    #         print("include", include)
-    #         try:
-    #             for i in include:
-    #                 exclude.remove(i)
-    #         except ValueError as e:
-    #             raise Exception(
-    #                 ".ezpodinclude contains entries that are not ignored", e
-    #             )
-    #     print("exclude", exclude)
-    #     exclude += [".git"]
-
-    #     connection = Connection(self.data.sshaddr.addr, connect_kwargs={"timeout": 10})
-    #     rsync(
-    #         c=connection,
-    #         source=self.project.folder.local_path,
-    #         target=f"/root/",
-    #         exclude=exclude,
-    #         rsync_opts="-L",
-    #         ssh_opts="-o StrictHostKeyChecking=no",
-    #     )
-    #     connection.close()
-
     def sync_folder_async(self, folder: Optional[RunFolder] = None):
         from ezpod.sync import asyncrsync
 
         folder = folder or self.project.folder
-        exclude = []
-        exclude += [".git"]
-        if ".gitignore" in os.listdir(self.folder):
-            exclude += [
-                ist
-                for i in open(folder.local / ".gitignore").read().split("\n")
-                if not (ist := i.strip()).startswith("#") and ist
-            ]
-        if ".ezpodignore" in os.listdir(self.folder):
-            exclude += [
-                ist
-                for i in open(folder.local / ".ezpodignore").read().split("\n")
-                if not (ist := i.strip()).startswith("#") and ist
-            ]
-        print("exclude", exclude)
-        if ".ezpodinclude" in os.listdir(self.folder):
-            include = [
-                ist
-                for i in open(folder.local / ".ezpodinclude").read().split("\n")
-                if not (ist := i.strip()).startswith("#") and ist
-            ]
-            print("include", include)
-            try:
-                for i in include:
-                    exclude.remove(i)
-            except ValueError as e:
-                raise Exception(
-                    ".ezpodinclude contains entries that are not ignored", e
-                )
-        print("exclude", exclude)
-        exclude += [".git"]
+        exclude = {".git"} | parse_include_file(folder.local / ".gitignore")
+        ezpod_exclude = parse_include_file(folder.local / ".ezpodignore")
+        include = parse_include_file(folder.local / ".ezpodinclude")
+        if include & ezpod_exclude:
+            raise Exception(
+                f".ezpodinclude contains entries that were ignored in .ezpodignore: {include & ezpod_exclude}"
+            )
+        if include - exclude:
+            raise Exception(
+                f".ezpodinclude contains entries that are not ignored: {include - exclude}"
+            )
+        exclude = list((exclude | ezpod_exclude) - include)
         print("syncing to", self.data.sshaddr)
         promise = asyncrsync(
             host=self.data.sshaddr.ip,
