@@ -1,6 +1,5 @@
 libtmux
 pydantic
-fabric
-patchwork
+pyinfra
 asyncssh
 boto3

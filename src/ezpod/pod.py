@@ -8,8 +8,6 @@ from typing import Deque, Dict, Optional
 
 import asyncssh
 import asyncssh.connection
-from fabric import Connection
-from patchwork.transfers import rsync
 
 from ezpod.PodDataProtocol import InstanceData
 
@@ -125,16 +123,16 @@ class Pod:
         print("exclude", exclude)
         exclude += [".git"]
         print("syncing to", self.data.sshaddr)
-        connection = Connection(self.data.sshaddr.addr, connect_kwargs={"timeout": 10})
         promise = asyncrsync(
-            c=connection,
-            source=self.project.folder.local_path,
-            target=f"{self.data.sshaddr.homedir}/{self.project.folder.remote_name}",
+            host=self.data.sshaddr.ip,
+            user=self.data.sshaddr.user,
+            port=int(self.data.sshaddr.port),
+            key_path=self.data.sshaddr.key_path or None,
+            src=self.project.folder.local_path,
+            dest=f"{self.data.sshaddr.homedir}/{self.project.folder.remote_name}",
             exclude=exclude,
-            rsync_opts="-L",
-            ssh_opts=self.data.sshaddr.full_opts,
         )
-        return promise, connection
+        return promise
 
     def command_extras(self, cmd, in_folder=True):
         print("source_file", self.data.source_file, type(self.data))

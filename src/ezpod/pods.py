@@ -250,22 +250,16 @@ class Pods:
             purge_after=purge_after,
         )
 
-    def sync(self):  # todo do this async
+    def sync(self):
         self.sync_async()
-        return
-        self.wait_pending()
-        for pod in self.pods:
-            pod.sync_folder()
 
     def sync_async(self, prev_failed=False):
         self.wait_pending()
         print("syncing...")
         promises = []
-        connections = []
         for pod in self.pods:
-            promise, connection = pod.sync_folder_async()
+            promise = pod.sync_folder_async()
             promises.append(promise)
-            connections.append(connection)
         print("all syncs started, waiting")
         try:
             for promise in promises:
@@ -276,9 +270,7 @@ class Pods:
             print(f"failed sync with exception: {e}, retrying in 5 seconds...")
             time.sleep(5)
             self.sync_async(prev_failed=True)
-        print("all syncs completed, closing connections")
-        for connection in connections:
-            connection.close()
+        print("all syncs completed")
         print("done")
 
     def make_outputs(self, command: str):
