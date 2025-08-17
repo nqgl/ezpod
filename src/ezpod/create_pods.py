@@ -1,25 +1,37 @@
 import os
-import subprocess
-from pathlib import Path
-from pydantic import BaseModel
 import tempfile
-from .shell_local_data import (
-    current_account_name,
-    set_current_account,
-    current_profile_name,
-    set_current_profile,
-    acct_profiles,
-)
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from typing_extensions import Self
+
+from ezpod.AWSPodCreationConfig import AWSPodCreationConfig
+from ezpod.backend_aws_env_var import BACKEND_AWS
+from ezpod.BasePodCreationConfig import BasePodCreationConfig, boto3
+
 from .runpodctl_executor import runpod_run
+from .shell_local_data import (
+    acct_profiles,
+    current_account_name,
+    current_profile_name,
+    set_current_account,
+    set_current_profile,
+)
 
 
-class PodCreationConfig(BaseModel):
+# ---------------------------------------------------------------------------
+# Generic / shared logic between back‑ends
+# ---------------------------------------------------------------------------
+
+
+class RunPodCreationConfig(BasePodCreationConfig):
     imgname: str = os.environ.get("EZPOD_IMAGE_NAME", "nqgl/runpod_test")
     volume_mount_path: str = "/root/workspace"
-    volume_id: str = os.environ.get("EZPOD_VOLUME_ID", "m8xpzudogd")
+    volume_id: str | None = os.environ.get("EZPOD_VOLUME_ID", "m8xpzudogd")
     template_id: str = os.environ.get("EZPOD_TEMPLATE_ID", "hczop1wb7d")
     vcpu: int = int(os.environ.get("EZPOD_POD_VCPU", 16))
     mem: int = int(os.environ.get("EZPOD_POD_MEM", 60))
+    gpu_count: int = 1
     gpu_type: str = os.environ.get("EZPOD_GPU_TYPE", "NVIDIA GeForce RTX 4090")
     volume_size: int = int(os.environ.get("EZPOD_VOLUME_SIZE", 100))
     disk_size: int = int(os.environ.get("EZPOD_DISK_SIZE", 20))
@@ -38,7 +50,7 @@ class PodCreationConfig(BaseModel):
     def list_profiles(cls):
         return [p.name for p in acct_profiles().iterdir() if p.is_file()]
 
-    def create_pod(self, name):
+    def _create_impl(self, name):
         print("making", self)
         pubkey = os.environ.get("EZPOD_PUBLIC_KEY", None)
         extra_pubkey = ""
@@ -53,12 +65,14 @@ class PodCreationConfig(BaseModel):
             env_vars = f"echo export WANDB_API_KEY=$WANDB_API_KEY >> /etc/rp_environment; \
             echo export HUGGINGFACE_API_KEY=$HUGGINGFACE_API_KEY >> /etc/rp_environment; \
             echo export NEPTUNE_API_TOKEN=$NEPTUNE_API_TOKEN >> /etc/rp_environment;\n"
+        volume_id_arg = f"--networkVolumeId {self.volume_id}" if self.volume_id else ""
         cmd = f"create pod \
         --gpuType '{self.gpu_type}' \
         --mem {self.mem} \
         --name {name} \
-        --networkVolumeId {self.volume_id} \
+        {volume_id_arg} \
         --templateId {self.template_id} \
+        --gpuCount {self.gpu_count} \
         --vcpu {self.vcpu} \
         --volumePath {self.volume_mount_path} \
         --imageName {self.imgname} \
@@ -128,3 +142,32 @@ class PodCreationConfig(BaseModel):
         if path.exists():
             raise ValueError(f"Profile {name} already exists")
         path.write_text(self.model_dump_json())
+
+
+# ---------------------------------------------------------------------------
+# AWS back‑end
+# ---------------------------------------------------------------------------
+"""
+
+aws ec2 run-instances \
+    --image-id ami-034c3feaa4af88624 \
+    --instance-type t2.micro \
+    --key-name testkey2 \
+    --security-group-ids sg-07df4d19ad1b1bf8f \
+    --subnet-id subnet-0da05d9e51f590a8f \
+    --count 1 \
+    --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=testname}]'
+"""
+
+
+# Backwards compatibility export so existing imports keep working
+#   from ezpod import PodCreationConfig  -> RunPod backend by default
+# The user can instead do:
+#   from ezpod.create_pods import AWSPodCreationConfig
+if TYPE_CHECKING:
+
+    class PodCreationConfig(RunPodCreationConfig):
+        pass
+
+else:
+    PodCreationConfig = AWSPodCreationConfig if BACKEND_AWS else RunPodCreationConfig

@@ -1,8 +1,9 @@
 import asyncio
-from collections import deque
 import os
 import time
+from collections import deque
 from datetime import datetime
+from functools import cached_property
 from typing import Any, Coroutine, Optional
 
 from ezpod.create_pods import PodCreationConfig
@@ -31,7 +32,7 @@ class Pods:
         self._output_max_lines = 1000
         self.group = group
 
-    @property
+    @cached_property
     def new_pods_config(self) -> Optional[PodCreationConfig]:
         return self._new_pods_config or PodCreationConfig.from_profile()
 
@@ -249,22 +250,16 @@ class Pods:
             purge_after=purge_after,
         )
 
-    def sync(self):  # todo do this async
+    def sync(self):
         self.sync_async()
-        return
-        self.wait_pending()
-        for pod in self.pods:
-            pod.sync_folder()
 
     def sync_async(self, prev_failed=False):
         self.wait_pending()
         print("syncing...")
         promises = []
-        connections = []
         for pod in self.pods:
-            promise, connection = pod.sync_folder_async()
+            promise = pod.sync_folder_async()
             promises.append(promise)
-            connections.append(connection)
         print("all syncs started, waiting")
         try:
             for promise in promises:
@@ -275,9 +270,7 @@ class Pods:
             print(f"failed sync with exception: {e}, retrying in 5 seconds...")
             time.sleep(5)
             self.sync_async(prev_failed=True)
-        print("all syncs completed, closing connections")
-        for connection in connections:
-            connection.close()
+        print("all syncs completed")
         print("done")
 
     def make_outputs(self, command: str):
@@ -334,6 +327,8 @@ class Pods:
             print(
                 f"waiting for {len(wips)} pods to finish setup. {len(dones)} complete."
             )
+        for done in dones:
+            print("result", done.result())
         assert wips is not None
         to_cancel: set[Pod] = set()
         for wip in wips:
@@ -470,16 +465,31 @@ class Pods:
         assert "_" not in group
         group = f"{group}_"
         current_largest_n = max(
-            map(
-                lambda x: int(x.replace(group, "")),
-                allpods.by_name.keys(),
-            ),
+            [pod.data.podname.num for pod in allpods.pods],
             default=-1,
         )
         for i in range(n):
-            r = self.new_pods_config.create_pod(f"{group}{current_largest_n + i + 1}")
-            pod_id = str(r.stdout).split('pod "')[1].split('" created')[0]
-            self.pending.append(pod_id)
+            # Use the unified backend‑agnostic create() call.  It may return a
+            # backend specific identifier or a subprocess.CompletedProcess in
+            # the case of runpodctl.  We try to capture a pod/instance id when
+            # possible so that `wait_pending` can keep track of initialisation.
+
+            res = self.new_pods_config.create(f"{group}{current_largest_n + i + 1}")
+
+            # For the original RunPod backend the return value was a
+            # CompletedProcess; we parse its stdout to extract the pod ID so
+            # that the rest of the existing code keeps working without
+            # modifications.
+            pod_id: str | None = None
+            if isinstance(res, str):
+                pod_id = res
+            elif hasattr(res, "stdout"):
+                out = str(res.stdout)
+                if 'pod "' in out and '" created' in out:
+                    pod_id = out.split('pod "')[1].split('" created')[0]
+
+            if pod_id is not None:
+                self.pending.append(pod_id)
 
     def purge(self):
         for pod in self.pods:
@@ -549,4 +559,10 @@ class Pods:
             raise TypeError("Invalid key type")
         return Pods(
             self.project, pods_l, group=self.group, new_pods_config=self.new_pods_config
+        )
+
+    def get_alive(self) -> "Pods":
+        pods = [pod for pod in self.pods if pod.data.is_running]
+        return Pods(
+            self.project, pods, group=self.group, new_pods_config=self.new_pods_config
         )

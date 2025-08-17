@@ -1,70 +1,22 @@
-from pydantic import BaseModel, computed_field
-from typing import Optional
 import time
+from typing import Optional
 
-from .runpodctl_executor import runpod_info
+from pydantic import BaseModel, computed_field
 
+from ezpod.AddrEntry import AddrEntry
+from ezpod.backend_aws_env_var import BACKEND_AWS
+from ezpod.pod_group_info import PodGroupInfo
 
-class AddrEntry(BaseModel):
-    ip: str
-    port: int
-    dst_port: int
-    pub: str
-    proto: str
+from ezpod.PodDataProtocol import BMPMeta, InstanceData
 
-    def __init__(self, line: str):
-        addrstuff, protostuff = line.split("\xa0(")
-        pub, proto = protostuff.replace(")", "").split(",")
-        ipport, dst_port = addrstuff.split("->")
-        ip, port = ipport.split(":")
-        super().__init__(
-            ip=ip.strip(),
-            port=port.strip(),
-            dst_port=dst_port.strip(),
-            pub=pub.strip(),
-            proto=proto.strip(),
-        )
-
-    @property
-    def sshcmd(self):
-        return f"ssh -o StrictHostKeychecking=no -p {self.port} root@{self.ip} "
-
-    @property
-    def addr(self):
-        return f"{self.host}:{self.port}"
-
-    @property
-    def host(self):
-        return f"root@{self.ip}"
-
+from ezpod.runpodctl_executor import runpod_info, runpod_run
 
 PURGED_POD_IDS = []
 
 
-class PodName(BaseModel):
-    group: str
-    num: int
-    bad_name_cant_parse: str | None = None
-
-    def __str__(self):
-        if self.bad_name_cant_parse is not None:
-            return self.bad_name_cant_parse
-        return f"{self.group}_{self.num}"
-
-    @classmethod
-    def from_str(cls, name: str):
-        try:
-            group, num = name.split("_")
-            return cls(group=group, num=int(num))
-        except:
-            print("ERROR: Failed to parse bad pod name:", name)
-            return cls(group="", num=0, bad_name_cant_parse=name)
-
-
 class PodData(BaseModel):
     id: str
-    # name: str
-    podname: PodName
+    podname: PodGroupInfo  # TODO Rename to group_info
     gpu_qty: int
     gpu_type: str
     imgname: str
@@ -76,6 +28,7 @@ class PodData(BaseModel):
     volume: int
     cost: float
     addrs: list[AddrEntry]
+    source_file: str = "/etc/rp_environment"
     # assigned_id: Optional[int] = None
 
     @computed_field
@@ -108,7 +61,7 @@ class PodData(BaseModel):
         #     assigned_id = None
         pod = cls(
             id=podid.strip(),
-            podname=PodName.from_str(name.strip()),
+            podname=PodGroupInfo.from_str(name.strip()),
             gpu_qty=gpu.split(" ")[0],
             gpu_type=" ".join(gpu.split(" ")[1:]),
             imgname=imgname,
@@ -122,7 +75,10 @@ class PodData(BaseModel):
             addrs=(
                 []
                 if skip_addrs
-                else [AddrEntry(addrstr.strip()) for addrstr in ipsandports.split("),")]
+                else [
+                    AddrEntry.from_line(addrstr.strip())
+                    for addrstr in ipsandports.split("),")
+                ]
             ),
             # assigned_id=assigned_id,
         )
@@ -142,6 +98,12 @@ class PodData(BaseModel):
 
     @classmethod
     def get_all(cls) -> list["PodData"]:
+        if BACKEND_AWS:
+            from .ec2_data import EC2Data
+            import os
+
+            region = os.environ.get("EZPOD_AWS_REGION", None)
+            return EC2Data.get_all_pods(region)
         for i in range(100):
             try:
                 return cls._get_all()
@@ -171,6 +133,8 @@ class PodData(BaseModel):
 
     @classmethod
     def _purge_failing(cls) -> list["PodData"]:
+        if BACKEND_AWS:
+            raise NotImplementedError("Purging failing pods not implemented for AWS")
         info = runpod_info()
         sp = info.split("\tPORTS")[1:]
         assert len(sp) == 1
@@ -191,3 +155,22 @@ class PodData(BaseModel):
                 # PURGED_POD_IDS.append(failpod.id)
                 pod = Pod(data=failpod)
                 pod.remove()
+
+    def remove_pod(self):
+        return runpod_run(f"remove pod {self.id}")
+
+    @property
+    def is_running(self) -> bool:
+        return self.status.lower() == "running"
+
+
+def main():
+    import ezpod
+
+    ezpod.login("markov")
+    for pod in PodData.get_all():
+        print(pod.name)
+
+
+if __name__ == "__main__":
+    main()

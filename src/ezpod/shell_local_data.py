@@ -15,17 +15,6 @@ account_path = STATE_DIR / "account.state"
 profile_path = STATE_DIR / "profile.state"
 
 
-def runpodctl_log_in(key: str):
-    r = subprocess.run(
-        f"runpodctl config --apiKey {key}",
-        shell=True,
-        check=True,
-        capture_output=True,
-    )
-    if r.stderr:
-        raise Exception(r.stderr.decode("utf-8"))
-
-
 # class RunpodConfigState(BaseModel):
 #     config_text: str
 #     private_key: str
