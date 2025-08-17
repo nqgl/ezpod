@@ -1,4 +1,13 @@
+import os
+
 from pydantic import BaseModel
+
+
+def get_key_path():
+    path = os.environ.get("EZPOD_KEY_PATH", "")
+    if path:
+        assert path[-4:] in (".pub", ".pem")
+    return path
 
 
 class AddrEntry(BaseModel):
@@ -10,7 +19,7 @@ class AddrEntry(BaseModel):
     user: str = "root"
     opts: str = "-o StrictHostKeychecking=no"
     homedir: str = "/root"
-    key_path: str = ""
+    key_path: str = get_key_path()
 
     @property
     def full_opts(self):
