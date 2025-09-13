@@ -1,13 +1,15 @@
 # common_state_utils.py
-from argparse import Action
 import os
+import subprocess
 import tempfile
+from argparse import Action
 from pathlib import Path
 from typing import ClassVar
-from pydantic import BaseModel
-from .global_paths import ACCOUNTS_PATH, PROFILES_PATH
-import subprocess
+
 import toml
+from pydantic import BaseModel
+
+from .global_paths import ACCOUNTS_PATH, PROFILES_PATH
 
 STATE_DIR = Path(tempfile.gettempdir()) / "ezpod_shell_states" / f"shell_{os.getppid()}"
 STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -85,9 +87,9 @@ class Account(BaseModel):
         else:
             name = input("Account name: ")
         group = input("Default group (leave empty for no group/all pods): ")
-        assert (
-            "_" not in group and "pod" not in group
-        ), "Group name should not contain '_' or 'pod'"
+        assert "_" not in group and "pod" not in group, (
+            "Group name should not contain '_' or 'pod'"
+        )
         api_key = input("RunPod API key: ")
 
         account = Account(api_key=api_key, default_group=group or None)
@@ -98,7 +100,7 @@ def current_account_name():
     if "EZPOD_ACCOUNT_OVERRIDE" in os.environ:
         return os.environ["EZPOD_ACCOUNT_OVERRIDE"]
     if not account_path.exists():
-        return "default"
+        return os.environ.get("EZPOD_DEFAULT_ACCOUNT", None) or "default"
     return account_path.read_text().strip()
 
 
