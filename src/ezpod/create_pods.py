@@ -25,7 +25,7 @@ from .shell_local_data import (
 
 
 class RunPodCreationConfig(BasePodCreationConfig):
-    imgname: str = os.environ.get("EZPOD_IMAGE_NAME", "nqgl/runpod_test")
+    imgname: str | None = os.environ.get("EZPOD_IMAGE_NAME", None)
     volume_mount_path: str = "/root/workspace"
     volume_id: str | None = os.environ.get("EZPOD_VOLUME_ID", "m8xpzudogd")
     template_id: str = os.environ.get("EZPOD_TEMPLATE_ID", "hczop1wb7d")
@@ -66,6 +66,7 @@ class RunPodCreationConfig(BasePodCreationConfig):
             echo export HUGGINGFACE_API_KEY=$HUGGINGFACE_API_KEY >> /etc/rp_environment; \
             echo export NEPTUNE_API_TOKEN=$NEPTUNE_API_TOKEN >> /etc/rp_environment;\n"
         volume_id_arg = f"--networkVolumeId {self.volume_id}" if self.volume_id else ""
+        image_name_arg = f"--imageName {self.imgname}" if self.imgname else ""
         cmd = f"create pod \
         --gpuType '{self.gpu_type}' \
         --mem {self.mem} \
@@ -75,8 +76,8 @@ class RunPodCreationConfig(BasePodCreationConfig):
         --gpuCount {self.gpu_count} \
         --vcpu {self.vcpu} \
         --volumePath {self.volume_mount_path} \
-        --imageName {self.imgname} \
-        --secureCloud \
+        {image_name_arg} \
+         --secureCloud \
         --volumeSize {self.volume_size} \
         --containerDiskSize {self.disk_size} \
         --args 'bash -c \" apt update; apt install -y git rsync; \
