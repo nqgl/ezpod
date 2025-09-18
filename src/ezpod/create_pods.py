@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING
 from typing_extensions import Self
 
 from ezpod.AWSPodCreationConfig import AWSPodCreationConfig
-from ezpod.backend_aws_env_var import BACKEND_AWS
+from ezpod.GCPPodCreationConfig import GCPPodCreationConfig
+from ezpod.backend_aws_env_var import BACKEND_AWS, BACKEND_GCP
 from ezpod.BasePodCreationConfig import BasePodCreationConfig, boto3
 
 from .runpodctl_executor import runpod_run
@@ -171,4 +172,9 @@ if TYPE_CHECKING:
         pass
 
 else:
-    PodCreationConfig = AWSPodCreationConfig if BACKEND_AWS else RunPodCreationConfig
+    if BACKEND_AWS:
+        PodCreationConfig = AWSPodCreationConfig
+    elif BACKEND_GCP:
+        PodCreationConfig = GCPPodCreationConfig
+    else:
+        PodCreationConfig = RunPodCreationConfig

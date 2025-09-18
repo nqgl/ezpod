@@ -2,7 +2,7 @@ import subprocess
 import warnings
 from functools import wraps
 
-from .backend_aws_env_var import BACKEND_AWS
+from .backend_aws_env_var import BACKEND_AWS, BACKEND_GCP
 
 from .shell_local_data import Account
 
@@ -45,8 +45,10 @@ from .shell_local_data import Account
 
 
 def runpod_run(cmd):
-    if BACKEND_AWS:
-        raise NotImplementedError("runpod_run_output not implemented for AWS")
+    if BACKEND_AWS or BACKEND_GCP:
+        raise NotImplementedError(
+            "runpod_run_output not implemented for this backend"
+        )
     account = Account.load()
     key = account.api_key
 
@@ -65,8 +67,8 @@ def runpod_run_output(cmd):
 
 # @runpod_login
 def runpod_info():
-    if BACKEND_AWS:
-        raise NotImplementedError("runpod_info not implemented for AWS")
+    if BACKEND_AWS or BACKEND_GCP:
+        raise NotImplementedError("runpod_info not implemented for this backend")
     return runpod_run_output("get pod -a")
     # r = subprocess.run("runpodctl get pod -a", shell=True, capture_output=True)
     # return r.stdout.decode("utf-8")

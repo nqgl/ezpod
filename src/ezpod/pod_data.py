@@ -4,7 +4,7 @@ from typing import Optional
 from pydantic import BaseModel, computed_field
 
 from ezpod.AddrEntry import AddrEntry
-from ezpod.backend_aws_env_var import BACKEND_AWS
+from ezpod.backend_aws_env_var import BACKEND_AWS, BACKEND_GCP
 from ezpod.pod_group_info import PodGroupInfo
 
 from ezpod.PodDataProtocol import BMPMeta, InstanceData
@@ -104,6 +104,10 @@ class PodData(BaseModel):
 
             region = os.environ.get("EZPOD_AWS_REGION", None)
             return EC2Data.get_all_pods(region)
+        if BACKEND_GCP:
+            from .gcp_data import GCPInstanceData
+
+            return GCPInstanceData.get_all()
         for i in range(100):
             try:
                 return cls._get_all()
@@ -133,8 +137,10 @@ class PodData(BaseModel):
 
     @classmethod
     def _purge_failing(cls) -> list["PodData"]:
-        if BACKEND_AWS:
-            raise NotImplementedError("Purging failing pods not implemented for AWS")
+        if BACKEND_AWS or BACKEND_GCP:
+            raise NotImplementedError(
+                "Purging failing pods not implemented for this backend"
+            )
         info = runpod_info()
         sp = info.split("\tPORTS")[1:]
         assert len(sp) == 1

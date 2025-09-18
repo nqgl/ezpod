@@ -3,7 +3,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 import os
-from ezpod.backend_aws_env_var import BACKEND_AWS
+from ezpod.backend_aws_env_var import BACKEND_AWS, BACKEND_GCP
 
 
 class RunFolder(BaseModel):
@@ -26,4 +26,4 @@ class RunFolder(BaseModel):
 class RunProject(BaseModel):
     folder: RunFolder
     pyname: str = "python3"
-    use_venv: bool = not BACKEND_AWS
+    use_venv: bool = not (BACKEND_AWS or BACKEND_GCP)

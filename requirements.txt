@@ -3,3 +3,4 @@ pydantic
 pyinfra
 asyncssh
 boto3
+toml
