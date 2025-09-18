@@ -1,0 +1,10 @@
+{
+  "snapshot": "snapshot-20250916-b94cfe88-13ce-4a5a-a967-15c6705b06e5",
+  "start": "source .venv/bin/activate",
+  "terminals": [
+    {
+      "name": "terminal",
+      "command": "source .venv/bin/activate"
+    }
+  ]
+}

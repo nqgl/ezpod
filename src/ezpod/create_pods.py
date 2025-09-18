@@ -7,7 +7,7 @@ from typing_extensions import Self
 
 from ezpod.AWSPodCreationConfig import AWSPodCreationConfig
 from ezpod.GCPPodCreationConfig import GCPPodCreationConfig
-from ezpod.backend_aws_env_var import BACKEND_AWS, BACKEND_GCP
+from ezpod.backend_choice_env_var import BACKEND_AWS, BACKEND_GCP
 from ezpod.BasePodCreationConfig import BasePodCreationConfig, boto3
 
 from .runpodctl_executor import runpod_run
@@ -37,20 +37,6 @@ class RunPodCreationConfig(BasePodCreationConfig):
     volume_size: int = int(os.environ.get("EZPOD_VOLUME_SIZE", 100))
     disk_size: int = int(os.environ.get("EZPOD_DISK_SIZE", 20))
 
-    @classmethod
-    def from_profile(cls, profile: str | None = None):
-        if profile is None:
-            profile = current_profile_name()
-            # profile = os.environ.get("EZPOD_PROFILE", None)
-        if profile is None:
-            return cls()
-        cfg_path = acct_profiles() / f"{profile}.json"
-        return cls.model_validate_json(cfg_path.read_text())
-
-    @classmethod
-    def list_profiles(cls):
-        return [p.name for p in acct_profiles().iterdir() if p.is_file()]
-
     def _create_impl(self, name):
         print("making", self)
         pubkey = os.environ.get("EZPOD_PUBLIC_KEY", None)
@@ -63,9 +49,11 @@ class RunPodCreationConfig(BasePodCreationConfig):
             echo export HUGGINGFACE_API_KEY={os.environ.get('HUGGINGFACE_API_KEY', '$HUGGINGFACE_API_KEY')} >> /etc/rp_environment;\
             echo export NEPTUNE_API_TOKEN={os.environ.get('NEPTUNE_API_TOKEN', '$NEPTUNE_API_TOKEN')} >> /etc/rp_environment;\n"
         else:
-            env_vars = f"echo export WANDB_API_KEY=$WANDB_API_KEY >> /etc/rp_environment; \
+            env_vars = (
+                f"echo export WANDB_API_KEY=$WANDB_API_KEY >> /etc/rp_environment; \
             echo export HUGGINGFACE_API_KEY=$HUGGINGFACE_API_KEY >> /etc/rp_environment; \
             echo export NEPTUNE_API_TOKEN=$NEPTUNE_API_TOKEN >> /etc/rp_environment;\n"
+            )
         volume_id_arg = f"--networkVolumeId {self.volume_id}" if self.volume_id else ""
         image_name_arg = f"--imageName {self.imgname}" if self.imgname else ""
         cmd = f"create pod \
@@ -138,12 +126,6 @@ class RunPodCreationConfig(BasePodCreationConfig):
             volume_size=int(volume_size),
             disk_size=int(disk_size),
         )
-
-    def save(self, name):
-        path = acct_profiles() / f"{name}.json"
-        if path.exists():
-            raise ValueError(f"Profile {name} already exists")
-        path.write_text(self.model_dump_json())
 
 
 # ---------------------------------------------------------------------------

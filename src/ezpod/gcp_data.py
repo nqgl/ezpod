@@ -10,9 +10,10 @@ from typing import List
 from pydantic import BaseModel
 from typing_extensions import Self
 
+from typing import Any
 from ezpod.AddrEntry import AddrEntry
 from ezpod.pod_group_info import PodGroupInfo
-from ezpod.PodDataProtocol import InstanceData
+from ezpod.PodDataProtocol import PodDataProtocol, PodDataProperties
 
 
 class GCPNetworkInterface(BaseModel):
@@ -21,10 +22,10 @@ class GCPNetworkInterface(BaseModel):
     accessConfigs: list[dict] | None = None
 
 
-class GCPInstanceData(BaseModel):
+class GCPInstanceData(BaseModel, PodDataProtocol):
     """Subset of fields returned by ``gcloud compute instances list``."""
 
-    id: str | int
+    id: str
     name: str
     zone: str
     status: str
@@ -43,9 +44,7 @@ class GCPInstanceData(BaseModel):
     @property
     def addrs(self) -> list[AddrEntry]:
         user = os.environ.get("EZPOD_GCP_USER", "ubuntu")
-        key_path = os.environ.get(
-            "EZPOD_GCP_KEY_PATH", "~/.ssh/google_compute_engine"
-        )
+        key_path = os.environ.get("EZPOD_GCP_KEY_PATH", "~/.ssh/google_compute_engine")
         ip = ""
         if self.networkInterfaces:
             iface = self.networkInterfaces[0]
@@ -76,22 +75,15 @@ class GCPInstanceData(BaseModel):
     def gpu_qty(self) -> int:
         return 0
 
-    @property
-    def status(self) -> str:  # already defined but for protocol clarity
-        return self.__dict__["status"]
-
     @classmethod
     def get_all(cls) -> List[Self]:
         filter_expr = "labels.ezpod=true"
-        cmd = (
-            "gcloud compute instances list --format=json "
-            f"--filter='{filter_expr}'"
-        )
+        cmd = f"gcloud compute instances list --format=json --filter='{filter_expr}'"
         out = subprocess.check_output(cmd, shell=True)
         data = json.loads(out)
         return [cls.model_validate(d) for d in data]
 
-    def remove_pod(self):
+    def remove_pod(self) -> Any:
         zone = self.zone.split("/")[-1]
         return subprocess.run(
             f"gcloud compute instances delete {self.name} --zone {zone} --quiet",
@@ -102,3 +94,16 @@ class GCPInstanceData(BaseModel):
     @property
     def is_running(self) -> bool:
         return self.status.lower() == "running"
+
+    @property
+    def properties(self) -> PodDataProperties:
+        return PodDataProperties(
+            id=str(self.id),
+            podname=self.podname,
+            addrs=self.addrs,
+            gpu_type=self.gpu_type,
+            gpu_qty=self.gpu_qty,
+            name=self.name,
+            sshaddr=self.sshaddr,
+            source_file=self.source_file,
+        )

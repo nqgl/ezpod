@@ -1,13 +1,14 @@
 import time
-from typing import Optional
+from typing import Optional, Any
 
 from pydantic import BaseModel, computed_field
 
 from ezpod.AddrEntry import AddrEntry
-from ezpod.backend_aws_env_var import BACKEND_AWS, BACKEND_GCP
+from ezpod.backend_choice_env_var import BACKEND_AWS, BACKEND_GCP
 from ezpod.pod_group_info import PodGroupInfo
 
-from ezpod.PodDataProtocol import BMPMeta, InstanceData
+# Using new PodDataProtocol/PodDataProperties in provider implementations (AWS/GCP)
+# PodData is the RunPod representation and may coexist with provider models.
 
 from ezpod.runpodctl_executor import runpod_info, runpod_run
 
@@ -97,7 +98,7 @@ class PodData(BaseModel):
         return addr[0]
 
     @classmethod
-    def get_all(cls) -> list["PodData"]:
+    def get_all(cls) -> list[Any]:
         if BACKEND_AWS:
             from .ec2_data import EC2Data
             import os
@@ -119,6 +120,7 @@ class PodData(BaseModel):
                 if i > 30:
                     print("purging failing pods")
                     cls._purge_failing()
+        raise RuntimeError("Unable to fetch pods info after 100 retries")
 
     @classmethod
     def _get_all(cls) -> list["PodData"]:
@@ -136,7 +138,7 @@ class PodData(BaseModel):
         return datas
 
     @classmethod
-    def _purge_failing(cls) -> list["PodData"]:
+    def _purge_failing(cls) -> None:
         if BACKEND_AWS or BACKEND_GCP:
             raise NotImplementedError(
                 "Purging failing pods not implemented for this backend"

@@ -9,7 +9,7 @@ from typing import Deque, Dict, Optional
 import asyncssh
 import asyncssh.connection
 
-from ezpod.PodDataProtocol import InstanceData
+from ezpod.PodDataProtocol import PodDataProperties
 
 from .pod_data import PodData, PURGED_POD_IDS
 
@@ -40,11 +40,11 @@ def parse_include_file(file: Path) -> set[str]:
 class Pod:
     def __init__(
         self,
-        data: InstanceData,
+        data: PodDataProperties,
         project: Optional[RunProject] = None,
     ):
         self.project = project or RunProject(folder=RunFolder.cwd())
-        self.data: InstanceData = data
+        self.data: PodDataProperties = data
         # self.tmi = TMInstance(project=project, data=data)
         self.output: Optional[PodOutput] = None
         self._max_lines = 1000  # Could make this configurable in __init__ if needed
@@ -202,7 +202,7 @@ class Pod:
         # if self.tmi.proj:
         #     self.tmi.pane.send_keys("exit")
 
-    def update(self, data: InstanceData):
+    def update(self, data: PodDataProperties):
         if self.data != data:
             print(f"Pod {self.data.name} data changed.")
         if self.data.id != data.id:

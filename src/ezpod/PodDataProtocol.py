@@ -1,59 +1,40 @@
 from abc import ABC, abstractmethod
-from typing import Protocol
-
-from pydantic import BaseModel
-
+from typing import Any
 from typing_extensions import Self
-
+from pydantic import BaseModel
 from ezpod.AddrEntry import AddrEntry
 from ezpod.pod_group_info import PodGroupInfo
 
 
-class PodDataProtocol(Protocol):
-    @property
-    def id(self) -> str: ...
-    @property
-    def podname(self) -> str: ...
-    @property
-    def addrs(self) -> list[AddrEntry]: ...
-    @property
-    def gpu_type(self) -> str: ...
-    @property
-    def gpu_qty(self) -> int: ...
-    @property
-    def name(self) -> str: ...
-    @property
-    def sshaddr(self) -> AddrEntry: ...
+class PodDataProperties(BaseModel):
+    """Concrete Pydantic model capturing static pod data fields."""
+
+    id: str
+    podname: PodGroupInfo
+    addrs: list[AddrEntry]
+    gpu_type: str
+    gpu_qty: int
+    name: str
+    sshaddr: AddrEntry
+    source_file: str
 
 
-class BMPMeta(type(BaseModel), type(Protocol)):
-    pass
+class PodDataProtocol(ABC):
+    """Abstract base for dynamic pod‑data implementations."""
 
-
-class InstanceData(Protocol):
-    @property
-    def id(self) -> str: ...
-    @property
-    def podname(self) -> PodGroupInfo: ...
-    @property
-    def addrs(self) -> list[AddrEntry]: ...
-    @property
-    def gpu_type(self) -> str: ...
-    @property
-    def gpu_qty(self) -> int: ...
-    @property
-    def name(self) -> str: ...
-    @property
-    def sshaddr(self) -> AddrEntry: ...
-
-    @property
-    def status(self) -> str: ...
-    @property
-    def source_file(self) -> str: ...
     @classmethod
-    def get_all(cls) -> list[Self]: ...
+    @abstractmethod
+    def get_all(cls) -> list[Self]:
+        """Return all pod data instances for this backend."""
+        ...
 
-    def remove_pod(self): ...
+    @abstractmethod
+    def remove_pod(self) -> Any:
+        """Remove this pod in the backend."""
+        ...
 
     @property
-    def is_running(self) -> bool: ...
+    @abstractmethod
+    def properties(self) -> PodDataProperties:
+        """Static pod data snapshot."""
+        ...

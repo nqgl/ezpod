@@ -34,8 +34,8 @@ class AddrEntry(BaseModel):
         ip, port = ipport.split(":")
         return cls(
             ip=ip.strip(),
-            port=port.strip(),
-            dst_port=dst_port.strip(),
+            port=int(port.strip()),
+            dst_port=int(dst_port.strip()),
             pub=pub.strip(),
             proto=proto.strip(),
         )

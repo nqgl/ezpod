@@ -1,9 +1,14 @@
 from abc import ABC, abstractmethod
+from typing import ClassVar
 
 from pydantic import BaseModel
 from typing_extensions import Self
 
 from ezpod.shell_local_data import acct_profiles, current_profile_name
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # typing-only to avoid metaclass conflicts with pydantic
+    from .PodCreationConfigProtocol import PodCreationConfigProtocol
 
 # Optional boto3 import – only required when using the AWS backend
 try:
@@ -13,6 +18,8 @@ except (
 ):  # pragma: no cover – boto3 might not be installed in minimal setups
     boto3 = None  # type: ignore
 
+import subprocess
+
 
 class BasePodCreationConfig(BaseModel, ABC):
     """Abstract base class for cluster/pod/instance creation.
@@ -21,10 +28,10 @@ class BasePodCreationConfig(BaseModel, ABC):
     implement :py:meth:`create_pod`.
     """
 
-    config_ext: str = "json"
+    config_ext: ClassVar[str] = "json"
 
     @abstractmethod  # pragma: no cover – must be implemented by subclasses
-    def _create_impl(self, name: str):
+    def _create_impl(self, name: str) -> subprocess.CompletedProcess:
         """Subclasses implement their own creation logic and return a backend‑
         specific identifier (e.g. pod ID or EC2 instance ID)."""
 

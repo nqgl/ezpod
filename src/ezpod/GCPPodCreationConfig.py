@@ -5,6 +5,16 @@ from typing import ClassVar
 from typing_extensions import Self
 
 from ezpod.BasePodCreationConfig import BasePodCreationConfig
+import google.cloud.compute_v1 as gcp
+
+
+class StringedAttribs:
+    def __init__(self, obj):
+        self._obj = obj
+
+    def __getattr__(self, name):
+        if name.startswith("_"):
+            return super().__getattr__(name)
 
 
 class GCPPodCreationConfig(BasePodCreationConfig):
@@ -12,16 +22,10 @@ class GCPPodCreationConfig(BasePodCreationConfig):
 
     config_ext: ClassVar[str] = "gcp.json"
 
-    zone: str = os.environ.get("EZPOD_GCP_ZONE", "us-central1-a")
-    machine_type: str = os.environ.get(
-        "EZPOD_GCP_MACHINE_TYPE", "n1-standard-4"
-    )
-    image_project: str = os.environ.get(
-        "EZPOD_GCP_IMAGE_PROJECT", "ubuntu-os-cloud"
-    )
-    image_family: str = os.environ.get(
-        "EZPOD_GCP_IMAGE_FAMILY", "ubuntu-2204-lts"
-    )
+    zone: str = os.environ.get("EZPOD_GCP_ZONE", "us-west1-a")
+    machine_type: str = os.environ.get("EZPOD_GCP_MACHINE_TYPE", "a3-highgpu-1g")
+    image_project: str = os.environ.get("EZPOD_GCP_IMAGE_PROJECT", "ubuntu-os-cloud")
+    image_family: str = os.environ.get("EZPOD_GCP_IMAGE_FAMILY", "ubuntu-2204-lts")
     disk_size: int = int(os.environ.get("EZPOD_GCP_DISK_SIZE", 50))  # GiB
 
     def _create_impl(self, name: str):  # type: ignore[override]
@@ -37,7 +41,13 @@ class GCPPodCreationConfig(BasePodCreationConfig):
             f"--boot-disk-size {self.disk_size} "
             f"--labels=ezpod=true"
         )
-        return subprocess.run(cmd, shell=True, capture_output=True)
+        print(f"gcp create instance {name}: {cmd}")
+
+        p = subprocess.run(cmd, shell=True, capture_output=True)
+        if p.stderr:
+            raise Exception(p.stderr.decode("utf-8"))
+        print(f"result: {p.stdout.decode('utf-8')}")
+        return p
 
     @classmethod
     def interactive_make(cls) -> Self:  # pragma: no cover - user interaction
@@ -56,8 +66,7 @@ class GCPPodCreationConfig(BasePodCreationConfig):
             or default.image_family
         )
         disk_size = (
-            input(f"Disk size GB (default: {default.disk_size}): ")
-            or default.disk_size
+            input(f"Disk size GB (default: {default.disk_size}): ") or default.disk_size
         )
         return cls(
             zone=zone,

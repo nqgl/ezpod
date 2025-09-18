@@ -1,5 +1,7 @@
 from pydantic import BaseModel
 
+from ezpod.global_paths import POD_NAME_DELIMITER
+
 
 class PodGroupInfo(BaseModel):
     group: str
@@ -14,7 +16,7 @@ class PodGroupInfo(BaseModel):
     @classmethod
     def from_str(cls, name: str):
         try:
-            group, num = name.split("_")
+            group, num = name.split(POD_NAME_DELIMITER)
             return cls(group=group, num=int(num))
         except:
             print("ERROR: Failed to parse bad pod name:", name)
