@@ -101,7 +101,7 @@ class EC2InstanceData(BaseModel, PodDataProtocol):
     def sshaddr(self) -> AddrEntry:
         return self.addrs[0]
 
-    def remove_pod(self) -> Any:
+    def remove_pod(self) -> subprocess.CompletedProcess:
         return subprocess.run(
             f"aws ec2 terminate-instances --instance-ids {self.InstanceId} --output json",
             shell=True,
@@ -147,6 +147,7 @@ class EC2InstanceData(BaseModel, PodDataProtocol):
             name=self.name,
             sshaddr=self.sshaddr,
             source_file=self.source_file,
+            status=self.status,
         )
 
 

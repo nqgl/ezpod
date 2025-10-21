@@ -9,7 +9,7 @@ from typing import Deque, Dict, Optional
 import asyncssh
 import asyncssh.connection
 
-from ezpod.PodDataProtocol import PodDataProperties
+from ezpod.PodDataProtocol import PodDataProperties, PodDataProtocol
 
 from .pod_data import PodData, PURGED_POD_IDS
 
@@ -40,14 +40,22 @@ def parse_include_file(file: Path) -> set[str]:
 class Pod:
     def __init__(
         self,
-        data: PodDataProperties,
+        data: PodDataProtocol,
         project: Optional[RunProject] = None,
     ):
         self.project = project or RunProject(folder=RunFolder.cwd())
-        self.data: PodDataProperties = data
+        self.pod: PodDataProtocol = data
         # self.tmi = TMInstance(project=project, data=data)
         self.output: Optional[PodOutput] = None
         self._max_lines = 1000  # Could make this configurable in __init__ if needed
+
+    @property
+    def data(self) -> PodDataProperties:
+        return self.pod.properties
+
+    @property
+    def is_running(self) -> bool:
+        return self.pod.is_running
 
     @property
     def folder(self):
@@ -188,28 +196,33 @@ class Pod:
         raise Exception("No setup.py or requirements.txt found.")
 
     def remove(self):
-        r = self.data.remove_pod()
+        r = self.pod.remove_pod()
         # r = remove_pod(self.data.id)
         if r.stderr:
+            print("got stderr:")
             print(r.stderr)
-            print("Error removing pod. Retrying")
-            r = self.data.remove_pod()
-            if r.stderr:
-                raise Exception("Error removing pod.")
+
+            if r.returncode != 0:
+                print("Error removing pod. Retrying")
+                r = self.pod.remove_pod()
+                if r.stderr and (r.returncode != 0):
+                    print(r.stdout)
+                    raise Exception(f"Error removing pod: {r.stderr}")
         if r.stdout:
             print(f"{self.data.name}: {r.stdout}")
         PURGED_POD_IDS.append(self.data.id)
         # if self.tmi.proj:
         #     self.tmi.pane.send_keys("exit")
 
-    def update(self, data: PodDataProperties):
+    def update(self, pod: PodDataProtocol):
+        data = pod.properties
         if self.data != data:
             print(f"Pod {self.data.name} data changed.")
         if self.data.id != data.id:
             raise Exception("Wrong pod id.")
         if self.data.name != data.name:
             raise Exception("Pod name changed.")
-        self.data = data
+        self.pod = pod
 
     def __repr__(self):
         return f"{self.data.name} ({self.data.id}, {self.data.gpu_type}, {self.data.status})"

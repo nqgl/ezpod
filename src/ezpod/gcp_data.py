@@ -43,7 +43,7 @@ class GCPInstanceData(BaseModel, PodDataProtocol):
 
     @property
     def addrs(self) -> list[AddrEntry]:
-        user = os.environ.get("EZPOD_GCP_USER", "ubuntu")
+        user = os.environ.get("EZPOD_GCP_USER", "g")
         key_path = os.environ.get("EZPOD_GCP_KEY_PATH", "~/.ssh/google_compute_engine")
         ip = ""
         if self.networkInterfaces:
@@ -83,7 +83,7 @@ class GCPInstanceData(BaseModel, PodDataProtocol):
         data = json.loads(out)
         return [cls.model_validate(d) for d in data]
 
-    def remove_pod(self) -> Any:
+    def remove_pod(self) -> subprocess.CompletedProcess:
         zone = self.zone.split("/")[-1]
         return subprocess.run(
             f"gcloud compute instances delete {self.name} --zone {zone} --quiet",
@@ -106,4 +106,5 @@ class GCPInstanceData(BaseModel, PodDataProtocol):
             name=self.name,
             sshaddr=self.sshaddr,
             source_file=self.source_file,
+            status=self.status,
         )

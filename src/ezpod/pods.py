@@ -562,7 +562,7 @@ class Pods:
         )
 
     def get_alive(self) -> "Pods":
-        pods = [pod for pod in self.pods if pod.data.is_running]
+        pods = [pod for pod in self.pods if pod.pod.is_running]
         return Pods(
             self.project, pods, group=self.group, new_pods_config=self.new_pods_config
         )

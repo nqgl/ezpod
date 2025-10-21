@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any
+import subprocess
 from typing_extensions import Self
 from pydantic import BaseModel
 from ezpod.AddrEntry import AddrEntry
@@ -17,6 +17,10 @@ class PodDataProperties(BaseModel):
     name: str
     sshaddr: AddrEntry
     source_file: str
+    status: str
+
+
+type PDList[T: PodDataProtocol] = list[T]
 
 
 class PodDataProtocol(ABC):
@@ -24,12 +28,12 @@ class PodDataProtocol(ABC):
 
     @classmethod
     @abstractmethod
-    def get_all(cls) -> list[Self]:
+    def get_all(cls) -> PDList:
         """Return all pod data instances for this backend."""
         ...
 
     @abstractmethod
-    def remove_pod(self) -> Any:
+    def remove_pod(self) -> subprocess.CompletedProcess:
         """Remove this pod in the backend."""
         ...
 
@@ -37,4 +41,10 @@ class PodDataProtocol(ABC):
     @abstractmethod
     def properties(self) -> PodDataProperties:
         """Static pod data snapshot."""
+        ...
+
+    @property
+    @abstractmethod
+    def is_running(self) -> bool:
+        """Whether the pod is running."""
         ...

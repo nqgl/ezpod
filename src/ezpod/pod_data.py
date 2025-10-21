@@ -1,5 +1,9 @@
+import subprocess
+from ezpod.PodDataProtocol import PodDataProperties, PodDataProtocol
+from .ec2_data import EC2Data, EC2InstanceData
 import time
-from typing import Optional, Any
+from typing import Optional, Any, Self
+from .gcp_data import GCPInstanceData
 
 from pydantic import BaseModel, computed_field
 
@@ -15,7 +19,7 @@ from ezpod.runpodctl_executor import runpod_info, runpod_run
 PURGED_POD_IDS = []
 
 
-class PodData(BaseModel):
+class PodData(BaseModel, PodDataProtocol):
     id: str
     podname: PodGroupInfo  # TODO Rename to group_info
     gpu_qty: int
@@ -98,16 +102,13 @@ class PodData(BaseModel):
         return addr[0]
 
     @classmethod
-    def get_all(cls) -> list[Any]:
+    def get_all(cls) -> list[Self] | list[GCPInstanceData] | list[EC2InstanceData]:
         if BACKEND_AWS:
-            from .ec2_data import EC2Data
             import os
 
             region = os.environ.get("EZPOD_AWS_REGION", None)
             return EC2Data.get_all_pods(region)
         if BACKEND_GCP:
-            from .gcp_data import GCPInstanceData
-
             return GCPInstanceData.get_all()
         for i in range(100):
             try:
@@ -123,12 +124,12 @@ class PodData(BaseModel):
         raise RuntimeError("Unable to fetch pods info after 100 retries")
 
     @classmethod
-    def _get_all(cls) -> list["PodData"]:
+    def _get_all(cls) -> list[Self]:
         info = runpod_info()
         sp = info.split("\tPORTS")[1:]
         assert len(sp) == 1
         sp = sp[0]
-        datas = [PodData.fromline(p) for p in sp.split("\n")[1:-1]]
+        datas = [cls.fromline(p) for p in sp.split("\n")[1:-1]]
         for pod in datas:
             try:
                 _ = pod.sshaddr  # check if assigned
@@ -164,12 +165,26 @@ class PodData(BaseModel):
                 pod = Pod(data=failpod)
                 pod.remove()
 
-    def remove_pod(self):
+    def remove_pod(self) -> subprocess.CompletedProcess:
         return runpod_run(f"remove pod {self.id}")
 
     @property
     def is_running(self) -> bool:
         return self.status.lower() == "running"
+
+    @property
+    def properties(self) -> PodDataProperties:
+        return PodDataProperties(
+            id=self.id,
+            podname=self.podname,
+            addrs=self.addrs,
+            gpu_type=self.gpu_type,
+            gpu_qty=self.gpu_qty,
+            name=self.name,
+            sshaddr=self.sshaddr,
+            source_file=self.source_file,
+            status=self.status,
+        )
 
 
 def main():
